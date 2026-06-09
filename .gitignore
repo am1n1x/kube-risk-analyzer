@@ -1,0 +1,55 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Виртуальное окружение ---
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Настройки PyCharm / JetBrains ---
+.idea/
+*.iws
+out/
+
+# --- Локальные базы данных (SQLite) ---
+# Мы игнорируем саму БД, чтобы не коммитить историю сканирований в Git
+*.db
+*.db-journal
+*.sqlite3
+*.sqlite3-journal
+
+# --- Секреты и конфигурация среды ---
+.env
+.env.*
+*.pem
+*.key
+kubeconfig*
+
+# --- Логи и временные файлы ---
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
