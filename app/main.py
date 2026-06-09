@@ -9,6 +9,7 @@ from .scanners.rbac import analyze_rbac_bindings, get_sa_rbac_dangers
 from .scanners.workload import analyze_pod_workload
 from .scanners.network import analyze_services
 from .k8s_client import get_live_k8s_data
+from .bas import simulate_token_theft
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -233,3 +234,10 @@ def scan_live(db: Session = Depends(get_db)):
 def get_scan(scan_id: int, db: Session = Depends(get_db)):
     findings = db.query(models.Finding).filter(models.Finding.scan_id == scan_id).all()
     return findings
+
+
+@app.post("/bas/simulate/{namespace}/{pod_name}")
+def simulate_bas(namespace: str, pod_name: str):
+    result = simulate_token_theft(pod_name, namespace)
+    return result
+
