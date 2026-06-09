@@ -1,0 +1,96 @@
+[
+    {
+        "id": "DANGER-001",
+        "category": "rbac",
+        "description": "Чтение секретов (паролей, токенов)",
+        "dangerous_verbs": ["get", "list", "watch"],
+        "dangerous_resources": ["secrets"]
+    },
+    {
+        "id": "DANGER-002",
+        "category": "rbac",
+        "description": "Полный административный доступ (*)",
+        "dangerous_verbs": ["*"],
+        "dangerous_resources": ["*"]
+    },
+    {
+        "id": "DANGER-003",
+        "category": "rbac",
+        "description": "Создание подов (риск RCE)",
+        "dangerous_verbs": ["create"],
+        "dangerous_resources": ["pods"]
+    },
+    {
+        "id": "DANGER-004",
+        "category": "rbac",
+        "description": "Право на выполнение команд внутри пода (exec)",
+        "dangerous_verbs": ["create"],
+        "dangerous_resources": ["pods/exec"]
+    },
+    {
+        "id": "DANGER-005",
+        "category": "rbac",
+        "description": "Доступ к логам подов",
+        "dangerous_verbs": ["get", "list", "watch"],
+        "dangerous_resources": ["pods/log"]
+    },
+    {
+        "id": "DANGER-006",
+        "category": "rbac",
+        "description": "Право на изменение прав (escalate/bind)",
+        "dangerous_verbs": ["bind", "escalate"],
+        "dangerous_resources": ["roles", "clusterroles"]
+    },
+    {
+        "id": "DANGER-007",
+        "category": "rbac",
+        "description": "Доступ к управлению узлами (nodes)",
+        "dangerous_verbs": ["create", "update", "patch", "delete", "get", "list", "watch"],
+        "dangerous_resources": ["nodes"]
+    },
+    {
+        "id": "DANGER-008",
+        "category": "workload",
+        "description": "Контейнер в привилегированном режиме (Privileged)",
+        "key": "spec.containers.securityContext.privileged",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["pods"]
+    },
+    {
+        "id": "DANGER-009",
+        "category": "workload",
+        "description": "Использование хостовой сети (HostNetwork)",
+        "key": "spec.hostNetwork",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["pods"]
+    },
+    {
+        "id": "DANGER-010",
+        "category": "workload",
+        "description": "Монтирование хостовой директории (hostPath)",
+        "key": "spec.volumes.hostPath",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["pods"]
+    },
+    {
+        "id": "DANGER-011",
+        "category": "network",
+        "description": "Сервис открыт наружу через NodePort (риск прямого доступа к портам узла)",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["services"]
+    },
+    {
+        "id": "DANGER-012",
+        "category": "network",
+        "description": "Сервис открыт наружу через LoadBalancer (публичный IP)",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["services"]
+    },
+    {
+        "id": "DANGER-013",
+        "category": "network",
+        "description": "КРИТИЧЕСКАЯ УГРОЗА: База данных выставлена в интернет",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["services"]
+    }
+]
