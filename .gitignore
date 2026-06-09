@@ -53,3 +53,5 @@ kubeconfig*
 .pytest_cache/
 .coverage
 htmlcov/
+
+cluster_dump.yaml

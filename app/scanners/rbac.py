@@ -75,3 +75,35 @@ def analyze_rbac_bindings(bindings: list[dict], roles: dict, cluster_roles: dict
                         all_findings.append(finding)
 
     return all_findings
+
+
+def get_sa_rbac_dangers(sa_name: str, namespace: str, bindings: list[dict], roles: dict, cluster_roles: dict, db_rules) -> list[str]:
+    dangers_found = []
+
+    for binding in bindings:
+        subjects = binding.get("subjects") or []
+        for subject in subjects:
+            subj_ns = subject.get("namespace", binding.get("metadata", {}).get("namespace", "default"))
+            if subject.get("kind") == "ServiceAccount" and subject.get("name") == sa_name and subj_ns == namespace:
+                role_ref = binding.get("roleRef", {})
+                kind = role_ref.get("kind")
+                name = role_ref.get("name")
+
+                binding_ns = binding.get("metadata", {}).get("namespace", "default")
+
+                target_role = None
+                if kind == "Role":
+                    target_role = roles.get(f"Role/{binding_ns}/{name}")
+                elif kind == "ClusterRole":
+                    target_role = cluster_roles.get(f"ClusterRole/{name}")
+
+                if target_role:
+                    for rule in target_role.get("rules", []):
+                        role_verbs = rule.get("verbs", [])
+                        role_resources = rule.get("resources", [])
+                        dangers = evaluate_rbac_rule(role_verbs, role_resources, db_rules)
+                        for d in dangers:
+                            if d not in dangers_found:
+                                dangers_found.append(d)
+
+    return dangers_found
