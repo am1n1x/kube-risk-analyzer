@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="night">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kube Risk Analyzer</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-base-200 text-base-content min-h-screen" x-data="appData()" x-init="init()">
+
+    <div class="drawer lg:drawer-open">
+        <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
+
+        <div class="drawer-content flex flex-col items-center justify-start p-6">
+            <!-- Navbar on mobile -->
+            <div class="w-full navbar bg-base-300 rounded-box lg:hidden mb-4">
+                <div class="flex-none lg:hidden">
+                    <label for="my-drawer-2" class="btn btn-square btn-ghost">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-6 h-6 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    </label>
+                </div>
+                <div class="flex-1 px-2 mx-2 font-bold text-xl text-primary">Kube Risk Analyzer</div>
+            </div>
+
+            <!-- Page content here -->
+            <div class="w-full max-w-6xl">
+
+                <!-- Tab 1: Dashboard -->
+                <div x-show="activeTab === 'dashboard'" x-transition.opacity>
+                    <h2 class="text-3xl font-bold mb-6 text-primary">Dashboard</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <div class="stat bg-base-100 shadow rounded-box">
+                            <div class="stat-title text-base-content">Total Scans</div>
+                            <div class="stat-value text-secondary" x-text="scans.length"></div>
+                        </div>
+                        <div class="stat bg-base-100 shadow rounded-box">
+                            <div class="stat-title text-base-content">Latest Scan Findings</div>
+                            <div class="stat-value text-accent" x-text="scans[0] ? scans[0].findings.length : 0"></div>
+                        </div>
+                        <div class="stat bg-base-100 shadow rounded-box">
+                            <div class="stat-title text-base-content">Active Rules</div>
+                            <div class="stat-value text-primary" x-text="rules.length"></div>
+                        </div>
+                    </div>
+                    <div class="bg-base-100 p-6 rounded-box shadow w-full md:w-2/3">
+                        <h3 class="text-xl font-bold mb-4">Rules by Category</h3>
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Control Panel -->
+                <div x-show="activeTab === 'control'" x-transition.opacity x-cloak>
+                    <h2 class="text-3xl font-bold mb-6 text-primary">Control Panel</h2>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Scanners -->
+                        <div class="card bg-base-100 shadow-xl">
+                            <div class="card-body">
+                                <h2 class="card-title text-secondary">Vulnerability Scanners</h2>
+                                <p class="text-sm opacity-70">Run static analysis against Kubernetes configurations.</p>
+                                <div class="card-actions justify-end mt-4">
+                                    <button class="btn btn-outline btn-secondary w-full" @click="runOfflineScan()" :disabled="loading">
+                                        <span x-show="loading" class="loading loading-spinner rounded-full"></span>
+                                        Run Offline Scan (YAML)
+                                    </button>
+                                    <button class="btn btn-secondary w-full" @click="runLiveScan()" :disabled="loading">
+                                        <span x-show="loading" class="loading loading-spinner rounded-full"></span>
+                                        Run Live Cluster Scan
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BAS -->
+                        <div class="card bg-base-100 shadow-xl border border-error">
+                            <div class="card-body">
+                                <h2 class="card-title text-error">Breach & Attack Simulation</h2>
+                                <p class="text-sm opacity-70">Simulate real-world attacks to validate defenses.</p>
+                                <div class="form-control w-full mt-2">
+                                    <label class="label"><span class="label-text">Namespace</span></label>
+                                    <input type="text" x-model="basNamespace" class="input input-bordered w-full" placeholder="default" />
+                                </div>
+                                <div class="form-control w-full mt-2">
+                                    <label class="label"><span class="label-text">Pod Name</span></label>
+                                    <input type="text" x-model="basPodName" class="input input-bordered w-full" placeholder="e.g. nginx-pod" />
+                                </div>
+                                <div class="card-actions justify-end mt-4">
+                                    <button class="btn btn-error w-full" @click="runBas()" :disabled="loading || !basPodName">
+                                        <span x-show="loading" class="loading loading-spinner"></span>
+                                        Simulate Token Theft
+                                    </button>
+                                </div>
+
+                                <div x-show="basResult" class="mt-4 p-4 rounded-box overflow-hidden" :class="basResult?.success ? 'bg-success/20 text-success' : 'bg-error/20 text-error'">
+                                    <div class="font-bold mb-1" x-text="basResult?.success ? 'Exploit Successful' : 'Exploit Blocked'"></div>
+                                    <div class="text-sm font-mono break-words" x-text="basResult?.details"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: History & Reports -->
+                <div x-show="activeTab === 'history'" x-transition.opacity x-cloak>
+                    <h2 class="text-3xl font-bold mb-6 text-primary">Scan History</h2>
+
+                    <div x-show="!viewingScan" class="overflow-x-auto bg-base-100 rounded-box shadow">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Date</th>
+                                    <th>Target</th>
+                                    <th>Findings</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="scan in scans" :key="scan.id">
+                                    <tr>
+                                        <th x-text="scan.id"></th>
+                                        <td x-text="new Date(scan.scan_date).toLocaleString()"></td>
+                                        <td x-text="scan.target_name"></td>
+                                        <td>
+                                            <div class="badge badge-accent" x-text="scan.findings.length"></div>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline" @click="fetchScanDetails(scan.id)">View</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="scans.length === 0">
+                                    <td colspan="5" class="text-center py-4">No scans found.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div x-show="viewingScan" class="bg-base-100 rounded-box shadow p-6" x-cloak>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-bold">Details for Scan #<span x-text="viewingScan"></span></h3>
+                            <button class="btn btn-sm btn-ghost" @click="viewingScan = null">Back</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Target Resource</th>
+                                        <th>Risk Context</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="finding in selectedScanFindings" :key="finding.id">
+                                        <tr class="hover">
+                                            <td class="font-mono text-xs whitespace-nowrap" x-text="finding.subject"></td>
+                                            <td class="font-mono text-xs text-accent whitespace-nowrap" x-text="finding.role"></td>
+                                            <td class="text-sm" :class="finding.risk_description.includes('CRITICAL') ? 'text-error font-bold' : ''" x-text="finding.risk_description"></td>
+                                        </tr>
+                                    </template>
+                                    <tr x-show="selectedScanFindings.length === 0">
+                                        <td colspan="3" class="text-center py-4">No findings in this scan.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Threat Knowledge Base -->
+                <div x-show="activeTab === 'kb'" x-transition.opacity x-cloak>
+                    <h2 class="text-3xl font-bold mb-6 text-primary">Threat Knowledge Base</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <template x-for="rule in rules" :key="rule.description">
+                            <div class="card bg-base-100 shadow border border-neutral">
+                                <div class="card-body p-4">
+                                    <div class="flex justify-between items-start">
+                                        <div class="badge"
+                                            :class="{
+                                                'badge-secondary': rule.category === 'rbac',
+                                                'badge-accent': rule.category === 'workload',
+                                                'badge-info': rule.category === 'network'
+                                            }"
+                                            x-text="rule.category"></div>
+                                    </div>
+                                    <h3 class="mt-2 font-semibold text-lg" x-text="rule.description"></h3>
+                                    <div class="mt-2 text-xs font-mono opacity-80" x-show="rule.dangerous_rules">
+                                        <div x-show="rule.dangerous_verbs">Verbs: <span class="text-warning" x-text="rule.dangerous_verbs"></span></div>
+                                        <div x-show="rule.dangerous_resources">Res: <span class="text-info" x-text="rule.dangerous_resources"></span></div>
+                                        <div x-show="rule.key">Key: <span class="text-success" x-text="rule.key"></span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="drawer-side">
+            <label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
+            <ul class="menu p-4 w-80 min-h-full bg-base-300 text-base-content border-r border-neutral">
+                <div class="font-black text-2xl mb-8 mt-2 text-center text-primary tracking-wider hidden lg:block">🛡️ K8s Scanner</div>
+                <li><a :class="{'active': activeTab === 'dashboard'}" @click="activeTab = 'dashboard'">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                    Dashboard
+                </a></li>
+                <li><a :class="{'active': activeTab === 'control'}" @click="activeTab = 'control'">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Control Panel
+                </a></li>
+                <li><a :class="{'active': activeTab === 'history'}" @click="activeTab = 'history'">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+                    History & Reports
+                </a></li>
+                <li><a :class="{'active': activeTab === 'kb'}" @click="activeTab = 'kb'">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                    Knowledge Base
+                </a></li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('appData', () => ({
+                activeTab: 'dashboard',
+                scans: [],
+                rules: [],
+                selectedScanFindings: [],
+                viewingScan: null,
+                basPodName: '',
+                basNamespace: 'default',
+                basResult: null,
+                loading: false,
+                chartInstance: null,
+
+                async init() {
+                    await this.fetchData();
+
+                    this.$watch('activeTab', (value) => {
+                        if (value === 'dashboard') {
+                            setTimeout(() => this.renderChart(), 50);
+                        }
+                    });
+                },
+
+                async fetchData() {
+                    try {
+                        const [scansRes, rulesRes] = await Promise.all([
+                            fetch('/scans'),
+                            fetch('/rules')
+                        ]);
+                        this.scans = await scansRes.json();
+                        this.rules = await rulesRes.json();
+                        if (this.activeTab === 'dashboard') {
+                            this.renderChart();
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch data', e);
+                    }
+                },
+
+                async runOfflineScan() {
+                    this.loading = true;
+                    try {
+                        const res = await fetch('/scan/offline', { method: 'POST' });
+                        if(res.ok) await this.fetchData();
+                        this.activeTab = 'history';
+                    } catch (e) {
+                        alert('Scan failed');
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async runLiveScan() {
+                    this.loading = true;
+                    try {
+                        const res = await fetch('/scan/live', { method: 'POST' });
+                        if (!res.ok) throw new Error('Live scan request failed. ' + await res.text());
+                        await this.fetchData();
+                        this.activeTab = 'history';
+                    } catch (e) {
+                        alert('Scan failed: ' + e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async runBas() {
+                    if (!this.basPodName) return;
+                    this.loading = true;
+                    this.basResult = null;
+                    try {
+                        const res = await fetch(`/bas/simulate/${this.basNamespace}/${this.basPodName}`, { method: 'POST' });
+                        this.basResult = await res.json();
+                    } catch (e) {
+                        this.basResult = { success: false, details: e.toString() };
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async fetchScanDetails(scanId) {
+                    try {
+                        const res = await fetch(`/scans/${scanId}`);
+                        this.selectedScanFindings = await res.json();
+                        this.viewingScan = scanId;
+                    } catch(e) {
+                        console.error(e);
+                    }
+                },
+
+                renderChart() {
+                    const ctx = document.getElementById('categoryChart');
+                    if(!ctx) return;
+
+                    const counts = { rbac: 0, workload: 0, network: 0 };
+                    this.rules.forEach(r => {
+                        if(counts[r.category] !== undefined) counts[r.category]++;
+                        else counts[r.category] = 1;
+                    });
+
+                    if (this.chartInstance) {
+                        this.chartInstance.destroy();
+                    }
+
+                    this.chartInstance = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: Object.keys(counts).map(k => k.toUpperCase()),
+                            datasets: [{
+                                label: '# of Configured Rules',
+                                data: Object.values(counts),
+                                backgroundColor: [
+                                    'rgba(255, 99, 132, 0.5)',
+                                    'rgba(54, 162, 235, 0.5)',
+                                    'rgba(255, 206, 86, 0.5)'
+                                ],
+                                borderColor: [
+                                    'rgba(255, 99, 132, 1)',
+                                    'rgba(54, 162, 235, 1)',
+                                    'rgba(255, 206, 86, 1)'
+                                ],
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { precision: 0 }
+                                }
+                            }
+                        }
+                    });
+                }
+            }));
+        });
+    </script>
+</body>
+</html>

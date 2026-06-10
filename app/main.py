@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
 from . import models, schemas
@@ -13,6 +14,8 @@ from .bas import simulate_token_theft
 
 models.Base.metadata.create_all(bind=engine)
 
+templates = Jinja2Templates(directory="templates")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = SessionLocal()
@@ -23,6 +26,10 @@ async def lifespan(app: FastAPI):
         db.close()
 
 app = FastAPI(title="Kube Risk Analyzer API", lifespan=lifespan)
+
+@app.get("/")
+def read_root(request: Request):
+    return templates.TemplateResponse(request=request, name="index.html")
 
 @app.get("/health")
 def health_check():
@@ -235,9 +242,13 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)):
     findings = db.query(models.Finding).filter(models.Finding.scan_id == scan_id).all()
     return findings
 
+@app.get("/scans", response_model=list[schemas.ScanHistorySchema])
+def get_scans(db: Session = Depends(get_db)):
+    scans = db.query(models.ScanHistory).order_by(models.ScanHistory.id.desc()).all()
+    return scans
+
 
 @app.post("/bas/simulate/{namespace}/{pod_name}")
 def simulate_bas(namespace: str, pod_name: str):
     result = simulate_token_theft(pod_name, namespace)
     return result
-

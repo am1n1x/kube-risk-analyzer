@@ -4,3 +4,4 @@ sqlalchemy
 pydantic
 pyyaml
 kubernetes
+jinja2
