@@ -54,4 +54,7 @@ kubeconfig*
 .coverage
 htmlcov/
 
+.claude
+unpacked
+vkr.docx
 cluster_dump.yaml
