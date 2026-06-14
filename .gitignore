@@ -66,3 +66,9 @@ cluster_dump.yaml
 *.sqlite3
 *.sqlite3-journal
 identifier.sqlite
+
+*.key
+*.crt
+*.csr
+*.srl
+*.yaml

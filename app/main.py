@@ -914,3 +914,79 @@ def simulate_bas(
     ))
     db.commit()
     return {**result, "scan_id": scan.id}
+
+
+# ── Admission webhook ─────────────────────────────────────────────────────────
+
+_WEBHOOK_WORKLOAD_KINDS = {"Deployment", "DaemonSet", "StatefulSet", "ReplicaSet", "Job"}
+
+@app.post("/admission/validate")
+async def admission_validate(request: Request, db: Session = Depends(get_db)):
+    payload = await request.json()
+
+    uid = payload.get("request", {}).get("uid", "")
+    k8s_object = payload.get("request", {}).get("object", {})
+    kind = k8s_object.get("kind", "")
+    meta = k8s_object.get("metadata", {})
+    name = meta.get("name") or meta.get("generateName", "unknown")
+    namespace = payload.get("request", {}).get("namespace", "default")
+
+    if kind in _WEBHOOK_WORKLOAD_KINDS:
+        target_to_scan = k8s_object.get("spec", {}).get("template", {})
+    elif kind == "CronJob":
+        target_to_scan = (
+            k8s_object.get("spec", {})
+                      .get("jobTemplate", {})
+                      .get("spec", {})
+                      .get("template", {})
+        )
+    else:
+        target_to_scan = k8s_object
+
+    workload_rules = db.query(models.RiskRule).filter(
+        models.RiskRule.category == "workload",
+        models.RiskRule.is_enabled == True,
+    ).all()
+
+    workload_dangers = analyze_pod_workload(target_to_scan, workload_rules)
+
+    if workload_dangers:
+        scan = models.ScanHistory(target_name=f"Admission Blocked: {kind} {namespace}/{name}")
+        db.add(scan)
+        db.commit()
+        db.refresh(scan)
+
+        for danger_desc, danger_sev, danger_rem in workload_dangers:
+            db.add(models.Finding(
+                scan_id=scan.id,
+                subject=f"{kind}: {name}",
+                role="Admission Control",
+                risk_description=f"BLOCKED: {danger_desc}",
+                severity="CRITICAL",
+                remediation=danger_rem,
+            ))
+        db.commit()
+
+        return {
+            "apiVersion": "admission.k8s.io/v1",
+            "kind": "AdmissionReview",
+            "response": {
+                "uid": uid,
+                "allowed": False,
+                "status": {
+                    "message": (
+                        f"Kube Risk Analyzer blocked this deployment: "
+                        + ", ".join(d for d, _, __ in workload_dangers)
+                    ),
+                },
+            },
+        }
+
+    return {
+        "apiVersion": "admission.k8s.io/v1",
+        "kind": "AdmissionReview",
+        "response": {
+            "uid": uid,
+            "allowed": True,
+        },
+    }

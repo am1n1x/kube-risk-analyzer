@@ -132,6 +132,38 @@ Instead of guessing, the BAS module uses `kubernetes.stream` to actively `exec` 
 
 The `/bas/simulate` endpoint currently runs only `simulate_token_theft` (default) or `simulate_custom_script` (when `script_id` provided). `run_all_simulations` is available but not yet wired to an endpoint.
 
+#### 7b. Proactive Admission Control (Validating Webhook)
+
+The endpoint `POST /admission/validate` acts as a Kubernetes **ValidatingAdmissionWebhook**. The K8s API server POSTs an `AdmissionReview` JSON object to this URL before persisting any resource creation/update.
+
+**Flow:**
+1. Extract `uid`, `object` (the resource being created), `kind`, `name`, `namespace` from `request.payload`.
+2. Normalize to a scannable pod spec: workload kinds (`Deployment`, `DaemonSet`, `StatefulSet`, `ReplicaSet`, `Job`) use `spec.template`; `CronJob` uses `spec.jobTemplate.spec.template`; `Pod` uses the object directly.
+3. Run `analyze_pod_workload(target_to_scan, workload_rules)` with enabled workload rules from DB.
+4. **Blocked**: if any dangers found → create `ScanHistory(target_name="Admission Blocked: {kind} {ns}/{name}")` + one `Finding` per danger (`role="Admission Control"`, `severity="CRITICAL"`, `risk_description="BLOCKED: ..."`) → return `allowed: false` with a human-readable message.
+5. **Allowed**: no dangers → return `allowed: true`.
+
+**K8s cluster setup** (outside this app — for reference):
+```yaml
+# Register the webhook with the cluster:
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kube-risk-analyzer
+webhooks:
+  - name: validate.kube-risk-analyzer.io
+    clientConfig:
+      url: "https://<your-host>/admission/validate"
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["pods", "deployments", "daemonsets", "statefulsets", "replicasets", "jobs", "cronjobs"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+```
+All blocked admissions are visible in History & Reports with `target_name` starting with `"Admission Blocked:"`.
+
 #### 8. Endpoints Reference (`app/main.py`)
 
 | Method | Path | Response | Notes |
@@ -162,6 +194,7 @@ The `/bas/simulate` endpoint currently runs only `simulate_token_theft` (default
 | `GET` | `/db/backup/download` | `.db` file download | WAL-safe hot backup via `sqlite3.Connection.backup()`. Temp file cleaned up via `BackgroundTasks` after response sent |
 | `POST` | `/db/backup/server` | `{"status": "success", "filename": str}` | Saves backup to `backups/` directory on the server. Filename: `kube_risk_backup_{YYYYMMDD_HHMMSS}.db` |
 | `GET` | `/scans/{scan_id}/export/remediated-yaml` | YAML file download | Only for offline YAML scans (400 otherwise). Reads source dump, runs each item through `remediate_item`, returns hardened YAML stream. Filename: `remediated_{original_filename}` |
+| `POST` | `/admission/validate` | `AdmissionReview` JSON | Validating Admission Webhook endpoint. Accepts a K8s `AdmissionReview` payload, runs workload scanner against the submitted object, returns `allowed: false` + logs a `ScanHistory` record if violations found, `allowed: true` otherwise. |
 
 **Key helpers in `app/main.py`:**
 - `_pod_display_status(status: dict) -> str` — reads `containerStatuses[*].state.waiting.reason` before falling back to `status.phase`; returns real statuses like `CrashLoopBackOff`
@@ -240,7 +273,7 @@ The `/bas/simulate` endpoint currently runs only `simulate_token_theft` (default
 - Scan History Module badge: `badge-error` (has MEDIUM+ findings), `badge-success` (clean/only LOW)
 
 #### 13. Project Structure
-- `app/main.py`: FastAPI application, 27 endpoints, Jinja2 frontend rendering. Key helpers: `_pod_display_status`, `_write_dump`, `_get_scan_or_404`.
+- `app/main.py`: FastAPI application, 28 endpoints, Jinja2 frontend rendering. Key helpers: `_pod_display_status`, `_write_dump`, `_get_scan_or_404`.
 - `app/database.py` & `app/models.py` & `app/schemas.py`: SQLAlchemy setup, ORM classes (4 models), Pydantic validation.
 - `app/scanners/`: `rbac.py` (3 functions), `workload.py` (2 functions), `network.py` (1 function), `remediator.py` (2 functions: `remediate_pod_spec`, `remediate_item`).
 - `app/bas.py`: Active simulation logic — 8 individual attack functions + 1 aggregated runner.
