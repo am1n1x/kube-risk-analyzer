@@ -28,6 +28,26 @@ def _severity_key(finding):
     return _SEVERITY_ORDER.get(getattr(finding, "severity", "MEDIUM"), 2)
 
 
+def _pod_display_status(status: dict) -> str:
+    """Return the most specific pod status visible to the user.
+
+    kubectl derives CrashLoopBackOff, ImagePullBackOff, etc. from
+    containerStatuses[*].state.waiting.reason, not from status.phase
+    (which remains "Running" even when containers are crash-looping).
+    """
+    for cs in (status.get("containerStatuses") or []) + (status.get("initContainerStatuses") or []):
+        state = cs.get("state") or {}
+        waiting = state.get("waiting") or {}
+        reason = waiting.get("reason", "")
+        if reason:
+            return reason
+        terminated = state.get("terminated") or {}
+        t_reason = terminated.get("reason", "")
+        if t_reason and t_reason != "Completed":
+            return t_reason
+    return status.get("phase", "Unknown")
+
+
 def _write_dump(items: list, prefix: str) -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{prefix}_{ts}.yaml"
@@ -77,7 +97,7 @@ def get_cluster_pod_list():
             pods.append({
                 "name": meta.get("name"),
                 "namespace": meta.get("namespace", "default"),
-                "phase": status.get("phase", "Unknown"),
+                "phase": _pod_display_status(status),
                 "node": spec.get("nodeName", ""),
             })
         return {"pods": pods, "source": "live"}

@@ -82,9 +82,9 @@
                                                 <span class="font-mono text-xs"
                                                     :class="{
                                                         'text-success': pod.phase === 'Running',
-                                                        'text-warning': pod.phase === 'Pending',
-                                                        'text-error': pod.phase === 'Failed',
-                                                        'text-base-content/40': pod.phase === 'Unknown' || pod.phase === 'Succeeded'
+                                                        'text-warning': ['Pending','Terminating','ContainerCreating','PodInitializing'].includes(pod.phase),
+                                                        'text-base-content/40': ['Unknown','Succeeded','Completed','—'].includes(pod.phase),
+                                                        'text-error': !['Running','Pending','Terminating','ContainerCreating','PodInitializing','Unknown','Succeeded','Completed','—'].includes(pod.phase)
                                                     }"
                                                     x-text="pod.phase"></span>
                                             </td>
