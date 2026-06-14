@@ -3,9 +3,11 @@ import csv
 import io
 import json
 import os
+import sqlite3
+import tempfile
 from datetime import datetime
-from fastapi import FastAPI, Depends, HTTPException, Request, Body, Query
-from fastapi.responses import Response
+from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Request, Body, Query
+from fastapi.responses import FileResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
@@ -22,6 +24,11 @@ templates = Jinja2Templates(directory="templates")
 
 DUMPS_DIR = "dumps"
 os.makedirs(DUMPS_DIR, exist_ok=True)
+
+BACKUPS_DIR = "backups"
+os.makedirs(BACKUPS_DIR, exist_ok=True)
+
+DB_PATH = "kube_risk.db"
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
@@ -131,6 +138,44 @@ def read_root(request: Request):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+# ── Database backup ───────────────────────────────────────────────────────────
+
+@app.get("/db/backup/download")
+def backup_download(background_tasks: BackgroundTasks):
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+    tmp_path = tmp.name
+    tmp.close()
+
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(tmp_path)
+    src.backup(dst)
+    dst.close()
+    src.close()
+
+    filename = f"kube_risk_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    background_tasks.add_task(os.remove, tmp_path)
+    return FileResponse(
+        path=tmp_path,
+        media_type="application/octet-stream",
+        filename=filename,
+        background=background_tasks,
+    )
+
+
+@app.post("/db/backup/server")
+def backup_server():
+    filename = f"kube_risk_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    dest_path = os.path.join(BACKUPS_DIR, filename)
+
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(dest_path)
+    src.backup(dst)
+    dst.close()
+    src.close()
+
+    return {"status": "success", "filename": filename}
 
 
 # ── Cluster info ──────────────────────────────────────────────────────────────
