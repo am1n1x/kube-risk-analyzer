@@ -1290,16 +1290,40 @@
                 // ── Init ───────────────────────────────────────────────────
                 async init() {
                     const VALID_TABS = ['dashboard', 'control', 'history', 'kb'];
-                    const hashTab = window.location.hash.replace('#', '');
-                    if (VALID_TABS.includes(hashTab)) this.activeTab = hashTab;
+                    const parseHash = raw => {
+                        const parts = raw.split('/');
+                        const tab = VALID_TABS.includes(parts[0]) ? parts[0] : 'dashboard';
+                        const scanId = (tab === 'history' && /^\d+$/.test(parts[1] || '')) ? +parts[1] : null;
+                        return { tab, scanId };
+                    };
 
-                    this.$watch('activeTab', tab => { window.location.hash = tab; });
-                    window.addEventListener('hashchange', () => {
-                        const tab = window.location.hash.replace('#', '');
+                    const { tab: initTab, scanId: initScanId } = parseHash(location.hash.replace('#', ''));
+                    this.activeTab = initTab;
+
+                    this.$watch('activeTab', tab => {
+                        const hash = (tab === 'history' && this.viewingScan) ? `history/${this.viewingScan}` : tab;
+                        window.location.hash = hash;
+                        if (tab !== 'history') this.viewingScan = null;
+                    });
+
+                    this.$watch('viewingScan', scanId => {
+                        if (this.activeTab !== 'history') return;
+                        const targetHash = scanId ? `history/${scanId}` : 'history';
+                        if (window.location.hash.replace('#', '') === targetHash) return;
+                        window.location.hash = targetHash;
+                    });
+
+                    window.addEventListener('hashchange', async () => {
+                        const { tab, scanId } = parseHash(location.hash.replace('#', ''));
                         if (VALID_TABS.includes(tab)) this.activeTab = tab;
+                        if (tab === 'history') {
+                            if (scanId && scanId !== this.viewingScan) await this.fetchScanDetails(scanId);
+                            else if (!scanId && this.viewingScan) this.viewingScan = null;
+                        }
                     });
 
                     await this.fetchData();
+                    if (initScanId) await this.fetchScanDetails(initScanId);
                     this.$watch('podViewAllScans', val => localStorage.setItem('kra-pod-all-scans', val));
                 },
 
