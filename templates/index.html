@@ -452,7 +452,7 @@
                                                 :class="scanBadgeCls(scan.findings)"
                                                 x-text="scanModule(scan.target_name)"></span>
                                         </td>
-                                        <td class="font-mono text-xs font-semibold" x-text="scan.target_name"></td>
+                                        <td class="font-mono text-xs font-semibold max-w-xs truncate" :title="scan.target_name" x-text="scan.target_name"></td>
                                         <td class="text-center font-mono text-xs font-bold"
                                             :class="scan.findings.filter(f=>f.severity==='CRITICAL').length > 0 ? 'text-error' : 'text-base-content/25'"
                                             x-text="scan.findings.filter(f=>f.severity==='CRITICAL').length || '—'"></td>
@@ -476,9 +476,28 @@
                     </div>
 
                     <div x-show="viewingScan" class="bg-base-100 border border-base-300 rounded-sm p-5" x-cloak>
-                        <div class="flex justify-between items-center mb-4">
+                        <div class="flex flex-wrap justify-between items-center gap-2 mb-4">
                             <h3 class="text-base font-mono text-base-content uppercase tracking-wider">Findings — Scan #<span x-text="viewingScan"></span></h3>
-                            <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="viewingScan = null">Back</button>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <button class="btn btn-outline btn-xs rounded-sm font-mono border-base-300 text-base-content/70 hover:border-primary hover:text-primary" @click="exportScan('json')">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    JSON
+                                </button>
+                                <button class="btn btn-outline btn-xs rounded-sm font-mono border-base-300 text-base-content/70 hover:border-primary hover:text-primary" @click="exportScan('csv')">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    CSV
+                                </button>
+                                <button class="btn btn-outline btn-xs rounded-sm font-mono border-base-300 text-base-content/70 hover:border-primary hover:text-primary" @click="exportScan('markdown')">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    Markdown
+                                </button>
+                                <button class="btn btn-outline btn-xs rounded-sm font-mono border-base-300 text-base-content/70 hover:border-warning hover:text-warning" @click="exportScan('sarif')">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    SARIF
+                                </button>
+                                <div class="w-px h-4 bg-base-300 mx-0.5"></div>
+                                <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="viewingScan = null">Back</button>
+                            </div>
                         </div>
 
                         <!-- Filter bar -->
@@ -938,14 +957,23 @@
 
                 get dashPods() {
                     const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-                    const findings = this.scans[0] ? (this.scans[0].findings || []) : [];
+                    const lastScan = this.scans[0];
+                    const findings = lastScan ? (lastScan.findings || []) : [];
+
+                    // Detect pod-specific scan: "Live Pod: {namespace}/{podName}"
+                    const lastTarget = lastScan ? (lastScan.target_name || '') : '';
+                    const podScanMatch = lastTarget.match(/^Live Pod:\s+[^/]+\/(.+)$/);
+                    const scannedPodName = podScanMatch ? podScanMatch[1] : null;
+
                     let pods = [];
                     if (this.clusterPodsSource === 'live' && this.clusterPods.length > 0) {
                         pods = this.clusterPods.map(pod => {
                             const pf = findings.filter(f =>
                                 f.subject === `Pod: ${pod.name}` ||
                                 f.subject.startsWith(`Pod: ${pod.name} `) ||
-                                (pod.sa && f.subject === `ServiceAccount:${pod.sa}`)
+                                // SA findings: only attribute to the scanned pod when it's a pod-specific scan
+                                (pod.sa && f.subject === `ServiceAccount:${pod.sa}` &&
+                                    (!scannedPodName || pod.name === scannedPodName))
                             );
                             const maxSev = pf.reduce((best, f) =>
                                 best === null || (SEV_ORDER[f.severity] ?? 2) < (SEV_ORDER[best] ?? 2) ? f.severity : best
@@ -1150,6 +1178,10 @@
                     } finally {
                         this.loading = false;
                     }
+                },
+
+                exportScan(format) {
+                    window.location.href = `/scans/${this.viewingScan}/export/${format}`;
                 },
 
                 async deleteScan(scanId) {

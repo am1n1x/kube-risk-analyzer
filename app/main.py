@@ -1,7 +1,11 @@
 from contextlib import asynccontextmanager
+import csv
+import io
+import json
 import os
 from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, Request, Body, Query
+from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
@@ -209,6 +213,134 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+# ── Scan exports ──────────────────────────────────────────────────────────────
+
+def _get_scan_or_404(scan_id: int, db: Session) -> models.ScanHistory:
+    scan = db.query(models.ScanHistory).filter(models.ScanHistory.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return scan
+
+
+@app.get("/scans/{scan_id}/export/json")
+def export_scan_json(scan_id: int, db: Session = Depends(get_db)):
+    scan = _get_scan_or_404(scan_id, db)
+    data = [
+        {"severity": f.severity, "subject": f.subject, "role": f.role, "risk_description": f.risk_description}
+        for f in sorted(scan.findings, key=_severity_key)
+    ]
+    return Response(
+        content=json.dumps({"scan_id": scan_id, "target": scan.target_name, "date": str(scan.scan_date), "findings": data}, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="scan_{scan_id}_findings.json"'},
+    )
+
+
+@app.get("/scans/{scan_id}/export/csv")
+def export_scan_csv(scan_id: int, db: Session = Depends(get_db)):
+    scan = _get_scan_or_404(scan_id, db)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Severity", "Subject", "Context", "Risk Description"])
+    for f in sorted(scan.findings, key=_severity_key):
+        writer.writerow([f.severity, f.subject, f.role, f.risk_description])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="scan_{scan_id}_findings.csv"'},
+    )
+
+
+@app.get("/scans/{scan_id}/export/markdown")
+def export_scan_markdown(scan_id: int, db: Session = Depends(get_db)):
+    scan = _get_scan_or_404(scan_id, db)
+    findings = sorted(scan.findings, key=_severity_key)
+
+    def esc(s: str) -> str:
+        return s.replace("|", "\\|").replace("\n", " ")
+
+    lines = [
+        "# Kube Risk Analyzer — Scan Report",
+        "",
+        f"**Scan ID:** {scan.id}  ",
+        f"**Target:** {scan.target_name}  ",
+        f"**Date:** {scan.scan_date.strftime('%Y-%m-%d %H:%M:%S UTC')}  ",
+        f"**Total Findings:** {len(findings)}  ",
+        "",
+        "## Findings",
+        "",
+        "| Severity | Subject | Context | Risk Description |",
+        "|----------|---------|---------|-----------------|",
+    ]
+    for f in findings:
+        lines.append(f"| {f.severity} | {esc(f.subject)} | {esc(f.role)} | {esc(f.risk_description)} |")
+
+    return Response(
+        content="\n".join(lines) + "\n",
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="scan_{scan_id}_report.md"'},
+    )
+
+
+@app.get("/scans/{scan_id}/export/sarif")
+def export_scan_sarif(scan_id: int, db: Session = Depends(get_db)):
+    scan = _get_scan_or_404(scan_id, db)
+    findings = sorted(scan.findings, key=_severity_key)
+
+    _level = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning", "LOW": "note"}
+
+    rules: dict[str, dict] = {}
+    results = []
+    for f in findings:
+        rule_id = f"KRA-{f.severity[:3]}-{abs(hash(f.risk_description)) % 9000 + 1000}"
+        if rule_id not in rules:
+            rules[rule_id] = {
+                "id": rule_id,
+                "name": f.risk_description[:80].replace(" ", "_"),
+                "shortDescription": {"text": f.risk_description},
+                "defaultConfiguration": {"level": _level.get(f.severity, "warning")},
+                "properties": {"tags": ["security", f.severity.lower()]},
+            }
+        results.append({
+            "ruleId": rule_id,
+            "level": _level.get(f.severity, "warning"),
+            "message": {"text": f.risk_description},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": f.subject, "uriBaseId": "%SRCROOT%"},
+                    "region": {"startLine": 1},
+                },
+                "logicalLocations": [{"name": f.role, "kind": "member"}],
+            }],
+            "properties": {"severity": f.severity, "subject": f.subject, "context": f.role},
+        })
+
+    sarif = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "Kube Risk Analyzer",
+                    "version": "1.0.0",
+                    "informationUri": "https://github.com/kube-risk-analyzer",
+                    "rules": list(rules.values()),
+                }
+            },
+            "results": results,
+            "automationDetails": {
+                "id": f"scan/{scan_id}",
+                "description": {"text": f"Scan of {scan.target_name} on {scan.scan_date}"},
+            },
+        }],
+    }
+    return Response(
+        content=json.dumps(sarif, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="scan_{scan_id}_sarif.json"'},
+    )
+
+
 # ── Offline scan ──────────────────────────────────────────────────────────────
 
 @app.post("/scan/offline")
@@ -390,14 +522,34 @@ def scan_live(
         if namespace:
             services = [s for s in services if s.get('metadata', {}).get('namespace') == namespace]
 
-    # RBAC bindings to scan (skip full RBAC for single-pod scope)
+    # RBAC bindings scope:
+    # - pod scope       → bindings referencing the pod's specific ServiceAccount
+    # - namespace scope → namespace RoleBindings + ClusterRoleBindings whose
+    #                     subjects include a ServiceAccount from that namespace
+    # - full            → everything
     if pod_name:
-        rbac_bindings = []
+        pod_sa = pods[0].get('spec', {}).get('serviceAccountName', 'default') if pods else None
+        pod_ns_sa = pods[0].get('metadata', {}).get('namespace', namespace or 'default') if pods else (namespace or 'default')
+        rbac_bindings = [
+            b for b in all_bindings
+            if pod_sa and any(
+                s.get('kind') == 'ServiceAccount' and
+                s.get('name') == pod_sa and
+                s.get('namespace') == pod_ns_sa
+                for s in (b.get('subjects') or [])
+            )
+        ]
     elif namespace:
         rbac_bindings = [
             b for b in all_bindings
             if b.get('metadata', {}).get('namespace') == namespace
-            or b.get('kind') == 'ClusterRoleBinding'
+            or (
+                not b.get('metadata', {}).get('namespace') and
+                any(
+                    s.get('kind') == 'ServiceAccount' and s.get('namespace') == namespace
+                    for s in (b.get('subjects') or [])
+                )
+            )
         ]
     else:
         rbac_bindings = all_bindings
@@ -408,18 +560,17 @@ def scan_live(
 
     findings_count = 0
 
-    # RBAC scan (full cluster or namespace scope)
-    if not pod_name:
-        rbac_findings = analyze_rbac_bindings(rbac_bindings, roles, cluster_roles, rbac_rules)
-        findings_count += len(rbac_findings)
-        for f in rbac_findings:
-            db.add(models.Finding(
-                scan_id=scan.id,
-                subject=f["subject"],
-                role=f["role"],
-                risk_description=f["risk_description"],
-                severity=f.get("severity", "MEDIUM"),
-            ))
+    # RBAC scan — runs for all scopes; for pod scope only covers that pod's SA
+    rbac_findings = analyze_rbac_bindings(rbac_bindings, roles, cluster_roles, rbac_rules)
+    findings_count += len(rbac_findings)
+    for f in rbac_findings:
+        db.add(models.Finding(
+            scan_id=scan.id,
+            subject=f["subject"],
+            role=f["role"],
+            risk_description=f["risk_description"],
+            severity=f.get("severity", "MEDIUM"),
+        ))
 
     # Workload scan + SA RBAC correlation
     for pod in pods:
