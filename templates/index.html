@@ -423,36 +423,53 @@
                     <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Scan History</h2>
 
                     <div x-show="!viewingScan" class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
-                        <table class="table table-xs">
+                        <table class="table table-xs w-full">
                             <thead>
-                                <tr class="text-base-content/70 text-xs font-mono uppercase tracking-wider">
-                                    <th>ID</th>
-                                    <th>Date</th>
+                                <tr class="bg-base-200 border-b border-base-300 text-base-content/60 text-xs font-mono uppercase tracking-wider">
+                                    <th class="w-10">#</th>
+                                    <th class="w-36">Date</th>
+                                    <th class="w-20 text-center">Module</th>
                                     <th>Target</th>
-                                    <th>Findings</th>
-                                    <th>Actions</th>
+                                    <th class="w-16 text-center">Critical</th>
+                                    <th class="w-16 text-center">High</th>
+                                    <th class="w-16 text-center">Total</th>
+                                    <th class="w-24 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <template x-for="scan in scans" :key="scan.id">
-                                    <tr class="hover:bg-base-300/50 border-b border-base-300">
-                                        <th class="text-base-content/70 font-mono text-xs" x-text="scan.id"></th>
-                                        <td class="text-base-content/70 font-mono text-xs" x-text="new Date(scan.scan_date.endsWith('Z') ? scan.scan_date : scan.scan_date + 'Z').toLocaleString()"></td>
-                                        <td>
-                                            <span x-text="scan.target_name" class="inline-block mr-2 text-base-content font-mono text-xs"></span>
-                                            <span x-show="scan.target_name.includes('BAS Simulation')" class="badge badge-sm badge-error rounded-sm">BAS</span>
+                                    <tr class="hover:bg-base-300/30 border-b border-base-300"
+                                        :class="{
+                                            'bg-error/10 border-l-4 border-error': scanMaxSev(scan.findings) === 'CRITICAL',
+                                            'bg-warning/5 border-l-4 border-warning': scanMaxSev(scan.findings) === 'HIGH',
+                                            'border-l-4 border-info/40': scanMaxSev(scan.findings) === 'MEDIUM'
+                                        }">
+                                        <th class="font-mono text-xs text-base-content/40" x-text="scan.id"></th>
+                                        <td class="font-mono text-xs text-base-content/60 whitespace-nowrap"
+                                            x-text="new Date(scan.scan_date.endsWith('Z') ? scan.scan_date : scan.scan_date + 'Z').toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})"></td>
+                                        <td class="text-center">
+                                            <span class="badge badge-sm rounded-sm font-mono font-bold uppercase tracking-wider"
+                                                :class="scanBadgeCls(scan.findings)"
+                                                x-text="scanModule(scan.target_name)"></span>
                                         </td>
-                                        <td>
-                                            <span class="text-base-content/70 font-mono text-xs" x-text="scan.findings.length"></span>
-                                        </td>
-                                        <td class="whitespace-nowrap">
-                                            <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="fetchScanDetails(scan.id)">View</button>
-                                            <button class="btn btn-outline btn-error btn-xs rounded-sm font-mono ml-1" @click="deleteScan(scan.id)">Del</button>
+                                        <td class="font-mono text-xs font-semibold" x-text="scan.target_name"></td>
+                                        <td class="text-center font-mono text-xs font-bold"
+                                            :class="scan.findings.filter(f=>f.severity==='CRITICAL').length > 0 ? 'text-error' : 'text-base-content/25'"
+                                            x-text="scan.findings.filter(f=>f.severity==='CRITICAL').length || '—'"></td>
+                                        <td class="text-center font-mono text-xs font-bold"
+                                            :class="scan.findings.filter(f=>f.severity==='HIGH').length > 0 ? 'text-warning' : 'text-base-content/25'"
+                                            x-text="scan.findings.filter(f=>f.severity==='HIGH').length || '—'"></td>
+                                        <td class="text-center font-mono text-xs"
+                                            :class="scan.findings.length > 0 ? 'text-base-content font-semibold' : 'text-base-content/30'"
+                                            x-text="scan.findings.length"></td>
+                                        <td class="whitespace-nowrap text-right">
+                                            <button class="btn btn-ghost btn-xs rounded-sm text-info" @click="fetchScanDetails(scan.id)">View</button>
+                                            <button class="btn btn-ghost btn-xs rounded-sm text-error" @click="deleteScan(scan.id)">Del</button>
                                         </td>
                                     </tr>
                                 </template>
                                 <tr x-show="scans.length === 0">
-                                    <td colspan="5" class="text-center py-6 text-base-content/60 font-mono text-xs">No scans found.</td>
+                                    <td colspan="8" class="text-center py-6 text-base-content/60 font-mono text-xs">No scans found.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1014,6 +1031,24 @@
 
                 sevCount(sev) {
                     return this.selectedScanFindings.filter(f => f.severity === sev).length;
+                },
+
+                scanModule(targetName) {
+                    if (targetName.includes('BAS Simulation')) return 'BAS';
+                    if (targetName.startsWith('Live')) return 'LIVE';
+                    return 'CSPM';
+                },
+
+                scanMaxSev(findings) {
+                    const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                    return (findings || []).reduce((best, f) =>
+                        best === null || (SEV_ORDER[f.severity] ?? 2) < (SEV_ORDER[best] ?? 2) ? f.severity : best
+                    , null);
+                },
+
+                scanBadgeCls(findings) {
+                    const dangerous = (findings || []).some(f => ['CRITICAL','HIGH','MEDIUM'].includes(f.severity));
+                    return dangerous ? 'badge-error' : 'badge-success';
                 },
 
                 // ── Theme ──────────────────────────────────────────────────
