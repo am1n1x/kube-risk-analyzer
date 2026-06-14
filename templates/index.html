@@ -34,7 +34,7 @@
                     <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Dashboard</h2>
 
                     <!-- Stat boxes -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
                         <div class="stat bg-base-100 border border-base-300 rounded-sm">
                             <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">Total Scans</div>
                             <div class="stat-value text-base-content" x-text="scans.length"></div>
@@ -46,6 +46,60 @@
                         <div class="stat bg-base-100 border border-base-300 rounded-sm">
                             <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">Active Rules</div>
                             <div class="stat-value text-base-content" x-text="rules.length"></div>
+                        </div>
+                        <div class="stat bg-base-100 border border-gray-700 rounded-sm">
+                            <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">BAS Defense Rate</div>
+                            <div class="stat-value text-success" x-text="basDefenseRate"></div>
+                            <div class="stat-desc text-base-content/40 font-mono text-xs">Attacks blocked by hardening</div>
+                        </div>
+                    </div>
+
+                    <!-- Security Telemetry Charts -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                        <!-- Security Posture Timeline (CSS-based) -->
+                        <div class="lg:col-span-2 bg-base-100 border border-base-300 rounded-sm p-4">
+                            <h3 class="text-xs font-mono uppercase tracking-wider text-base-content/60 mb-4">Security Posture Timeline</h3>
+                            <div x-show="scans.length === 0" class="flex items-center justify-center h-64 text-base-content/30 font-mono text-xs uppercase tracking-wider">No scan data yet</div>
+                            <div x-show="scans.length > 0" class="flex flex-col gap-3">
+                                <template x-for="scan in scans.slice(0, 5)" :key="scan.id">
+                                    <div class="group flex flex-col gap-1.5 p-2.5 border border-base-300 rounded-sm cursor-pointer hover:border-cyan-700/60 transition-colors duration-150"
+                                        @click="goToScan(scan.id)">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div class="flex items-center gap-2 min-w-0">
+                                                <span class="text-cyan-600 font-mono text-xs shrink-0"
+                                                    x-text="new Date(scan.scan_date).toLocaleString('en-GB', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).replace(',','')"></span>
+                                                <span class="text-base-content/70 font-mono text-xs truncate" x-text="scan.target_name"></span>
+                                            </div>
+                                            <span class="shrink-0 text-xs font-mono px-1.5 py-0.5 rounded-sm border"
+                                                :class="scan.findings.length === 0 ? 'border-emerald-700/50 text-emerald-500' : 'border-red-800/50 text-red-400'"
+                                                x-text="scan.findings.length + ' findings'"></span>
+                                        </div>
+                                        <div class="flex h-2.5 w-full bg-gray-800 rounded-none overflow-hidden border border-gray-700/50">
+                                            <div class="bg-red-500 h-full transition-all duration-300"
+                                                :style="'width:' + getSeverityPct(scan, 'CRITICAL') + '%'"></div>
+                                            <div class="bg-orange-500 h-full transition-all duration-300"
+                                                :style="'width:' + getSeverityPct(scan, 'HIGH') + '%'"></div>
+                                            <div class="bg-blue-500 h-full transition-all duration-300"
+                                                :style="'width:' + getSeverityPct(scan, 'MEDIUM') + '%'"></div>
+                                            <div class="bg-emerald-500 h-full transition-all duration-300"
+                                                :style="'width:' + getSeverityPct(scan, 'LOW') + '%'"></div>
+                                        </div>
+                                    </div>
+                                </template>
+                                <!-- Legend -->
+                                <div class="flex items-center gap-4 pt-1">
+                                    <span class="flex items-center gap-1.5 text-xs font-mono text-base-content/40"><span class="inline-block w-2.5 h-2.5 bg-red-500 rounded-sm"></span>Critical</span>
+                                    <span class="flex items-center gap-1.5 text-xs font-mono text-base-content/40"><span class="inline-block w-2.5 h-2.5 bg-orange-500 rounded-sm"></span>High</span>
+                                    <span class="flex items-center gap-1.5 text-xs font-mono text-base-content/40"><span class="inline-block w-2.5 h-2.5 bg-blue-500 rounded-sm"></span>Medium</span>
+                                    <span class="flex items-center gap-1.5 text-xs font-mono text-base-content/40"><span class="inline-block w-2.5 h-2.5 bg-emerald-500 rounded-sm"></span>Low</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lg:col-span-1 bg-base-100 border border-base-300 rounded-sm p-4">
+                            <h3 class="text-xs font-mono uppercase tracking-wider text-base-content/60 mb-3">Latest Scan Severity</h3>
+                            <div class="relative w-full h-80">
+                                <canvas id="severityChart"></canvas>
+                            </div>
                         </div>
                     </div>
 
@@ -1128,6 +1182,9 @@
                 rules: [],
                 scripts: [],
 
+                // ── Chart instances ────────────────────────────────────────
+                severityChartInstance: null,
+
                 // ── Cluster pods ───────────────────────────────────────────
                 clusterPods: [],
                 clusterPodsSource: 'loading',
@@ -1514,6 +1571,56 @@
                     return 'CSPM';
                 },
 
+                get basDefenseRate() {
+                    const basScans = this.scans.filter(s => s.target_name.includes('BAS Simulation'));
+                    if (basScans.length === 0) return 'N/A';
+                    const blocked = basScans.filter(s => this.scanMaxSev(s.findings) === 'LOW' || s.findings.length === 0).length;
+                    return Math.round((blocked / basScans.length) * 100) + '%';
+                },
+
+                getSeverityPct(scan, severity) {
+                    const total = (scan.findings || []).length;
+                    if (total === 0) return 0;
+                    const count = scan.findings.filter(f => f.severity === severity).length;
+                    return (count / total) * 100;
+                },
+
+                renderSeverityChart() {
+                    if (this.severityChartInstance) { this.severityChartInstance.destroy(); this.severityChartInstance = null; }
+
+                    const sevCanvas = document.getElementById('severityChart');
+                    if (!sevCanvas) return;
+
+                    const latest = this.scans[0];
+                    const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+                    if (latest) {
+                        for (const f of latest.findings) {
+                            if (f.severity in counts) counts[f.severity]++;
+                        }
+                    }
+                    this.severityChartInstance = new Chart(sevCanvas, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Critical', 'High', 'Medium', 'Low'],
+                            datasets: [{
+                                data: [counts.CRITICAL, counts.HIGH, counts.MEDIUM, counts.LOW],
+                                backgroundColor: ['#ef4444', '#f97316', '#3b82f6', '#10b981'],
+                                borderColor: '#111827',
+                                borderWidth: 2,
+                            }],
+                        },
+                        options: {
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                    labels: { color: '#6b7280', font: { family: 'monospace', size: 10 }, padding: 12 },
+                                },
+                            },
+                        },
+                    });
+                },
+
                 scanMaxSev(findings) {
                     const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
                     return (findings || []).reduce((best, f) =>
@@ -1566,6 +1673,7 @@
                         const hash = (tab === 'history' && this.viewingScan) ? `history/${this.viewingScan}` : tab;
                         window.location.hash = hash;
                         if (tab !== 'history') this.viewingScan = null;
+                        if (tab === 'dashboard') this.$nextTick(() => { this.renderSeverityChart(); });
                     });
 
                     this.$watch('viewingScan', scanId => {
@@ -1587,6 +1695,7 @@
                     await this.fetchData();
                     if (initScanId) await this.fetchScanDetails(initScanId);
                     this.$watch('podViewAllScans', val => localStorage.setItem('kra-pod-all-scans', val));
+                    if (this.activeTab === 'dashboard') this.$nextTick(() => { this.renderSeverityChart(); });
                 },
 
                 // ── Data fetchers ──────────────────────────────────────────
