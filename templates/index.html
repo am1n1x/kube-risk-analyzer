@@ -189,7 +189,7 @@
                                             }">
                                             <td class="font-mono text-xs font-semibold" x-text="t.target"></td>
                                             <td class="font-mono text-xs text-base-content/60 text-center whitespace-nowrap"
-                                                x-text="new Date(t.scan_date).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})"></td>
+                                                x-text="new Date(t.scan_date.endsWith('Z') ? t.scan_date : t.scan_date + 'Z').toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})"></td>
                                             <td class="text-center font-mono text-sm font-bold"
                                                 :class="t.total > 0 ? 'text-base-content' : 'text-base-content/30'"
                                                 x-text="t.total"></td>
@@ -243,8 +243,8 @@
                                         </div>
                                         <p x-show="dumpFiles.length === 0" class="text-xs font-mono text-base-content/40">No dump files found. Generate one below.</p>
                                         <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full"
-                                            @click="runOfflineScan()" :disabled="loading || !selectedDumpFile">
-                                            <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
+                                            @click="runOfflineScan()" :disabled="offlineScanLoading || !selectedDumpFile">
+                                            <span x-show="offlineScanLoading" class="loading loading-spinner rounded-sm"></span>
                                             <span x-text="selectedDumpFile ? 'Scan: ' + selectedDumpFile : 'Run Offline Scan'"></span>
                                         </button>
                                     </div>
@@ -350,8 +350,8 @@
                                                 placeholder="All pods" />
                                         </div>
 
-                                        <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full mt-1" @click="runLiveScan()" :disabled="loading">
-                                            <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
+                                        <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full mt-1" @click="runLiveScan()" :disabled="liveScanLoading">
+                                            <span x-show="liveScanLoading" class="loading loading-spinner rounded-sm"></span>
                                             <span x-text="liveScanPodName ? 'Scan Pod: ' + liveScanPodName : (liveScanNamespace ? 'Scan Namespace: ' + liveScanNamespace : 'Run Live Cluster Scan')"></span>
                                         </button>
                                     </div>
@@ -794,21 +794,21 @@
                 </li>
 
                 <div class="flex-1">
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'dashboard' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'dashboard'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a href="#dashboard" :class="(activeTab === 'dashboard' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
                         <span x-show="sidebarExpanded">Dashboard</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'control' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'control'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a href="#control" :class="(activeTab === 'control' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         <span x-show="sidebarExpanded">Control Panel</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'history' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'history'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a href="#history" :class="(activeTab === 'history' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                         <span x-show="sidebarExpanded">History & Reports</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'kb' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'kb'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a href="#kb" :class="(activeTab === 'kb' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-                        <span x-show="sidebarExpanded">Knowledge Base</span>
+                        <span x-show="sidebarExpanded">Detection Rules</span>
                     </a></li>
                 </div>
 
@@ -943,6 +943,8 @@
                 // ── Tab & global state ─────────────────────────────────────
                 activeTab: 'dashboard',
                 loading: false,
+                offlineScanLoading: false,
+                liveScanLoading: false,
                 sidebarExpanded: true,
                 theme: localStorage.getItem('kra-theme') || 'dark',
 
@@ -1287,6 +1289,16 @@
 
                 // ── Init ───────────────────────────────────────────────────
                 async init() {
+                    const VALID_TABS = ['dashboard', 'control', 'history', 'kb'];
+                    const hashTab = window.location.hash.replace('#', '');
+                    if (VALID_TABS.includes(hashTab)) this.activeTab = hashTab;
+
+                    this.$watch('activeTab', tab => { window.location.hash = tab; });
+                    window.addEventListener('hashchange', () => {
+                        const tab = window.location.hash.replace('#', '');
+                        if (VALID_TABS.includes(tab)) this.activeTab = tab;
+                    });
+
                     await this.fetchData();
                     this.$watch('podViewAllScans', val => localStorage.setItem('kra-pod-all-scans', val));
                 },
@@ -1348,7 +1360,7 @@
                 },
 
                 async runOfflineScan() {
-                    this.loading = true;
+                    this.offlineScanLoading = true;
                     try {
                         const qs = this.selectedDumpFile ? '?filename=' + encodeURIComponent(this.selectedDumpFile) : '';
                         const res = await fetch('/scan/offline' + qs, { method: 'POST' });
@@ -1358,12 +1370,12 @@
                     } catch (e) {
                         alert('Scan failed: ' + e);
                     } finally {
-                        this.loading = false;
+                        this.offlineScanLoading = false;
                     }
                 },
 
                 async runLiveScan() {
-                    this.loading = true;
+                    this.liveScanLoading = true;
                     try {
                         const params = new URLSearchParams();
                         if (this.liveScanNamespace) params.append('namespace', this.liveScanNamespace);
@@ -1376,7 +1388,7 @@
                     } catch (e) {
                         alert('Scan failed: ' + e);
                     } finally {
-                        this.loading = false;
+                        this.liveScanLoading = false;
                     }
                 },
 
