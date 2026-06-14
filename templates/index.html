@@ -26,7 +26,6 @@
                 <div class="flex-1 px-2 mx-2 font-bold text-xl text-primary">Kube Risk Analyzer</div>
             </div>
 
-            <!-- Page content here -->
             <div class="w-full max-w-6xl">
 
                 <!-- Tab 1: Dashboard -->
@@ -52,6 +51,7 @@
                 <div x-show="activeTab === 'control'" x-transition.opacity x-cloak>
                     <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Control Panel</h2>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
                         <!-- Scanners -->
                         <div class="bg-base-100 border border-base-300 rounded-sm">
                             <div class="p-5">
@@ -83,10 +83,19 @@
                                     <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Pod Name</span></label>
                                     <input type="text" x-model="basPodName" class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary focus:ring-1 focus:ring-primary" placeholder="e.g. nginx-pod" />
                                 </div>
+                                <div class="form-control w-full mt-2">
+                                    <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Attack Script</span></label>
+                                    <select x-model="basScriptId" class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary">
+                                        <option value="">Default: Token Theft (built-in)</option>
+                                        <template x-for="s in scripts" :key="s.id">
+                                            <option :value="s.id" x-text="s.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
                                 <div class="mt-5">
                                     <button class="btn btn-outline btn-sm rounded-sm text-error border-error/50 hover:bg-error/10 hover:border-error w-full" @click="runBas()" :disabled="loading || !basPodName">
                                         <span x-show="loading" class="loading loading-spinner"></span>
-                                        Simulate Token Theft
+                                        Run Simulation
                                     </button>
                                 </div>
 
@@ -94,6 +103,51 @@
                                     <div class="font-bold mb-1 uppercase tracking-wider" x-text="basResult?.success ? '▶ Exploit Successful' : '▶ Exploit Blocked'"></div>
                                     <div class="break-words text-sm" x-text="basResult?.details"></div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom BAS Scripts -->
+                    <div class="mt-6 bg-base-100 border border-base-300 rounded-sm">
+                        <div class="p-5">
+                            <div class="flex justify-between items-center mb-4">
+                                <div>
+                                    <h2 class="text-base font-bold text-base-content font-mono uppercase tracking-wider">Custom BAS Scripts</h2>
+                                    <p class="text-sm text-base-content/70 mt-1">Bash scripts executed via <span class="font-mono text-primary">/bin/sh -c</span> inside the target pod.</p>
+                                </div>
+                                <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary font-mono" @click="openAddScript()">
+                                    + New Script
+                                </button>
+                            </div>
+                            <div x-show="scripts.length === 0" class="text-center py-8 text-base-content/40 font-mono text-sm">No custom scripts yet.</div>
+                            <div x-show="scripts.length > 0" class="overflow-x-auto">
+                                <table class="table table-xs">
+                                    <thead>
+                                        <tr class="text-base-content/70 text-xs font-mono uppercase tracking-wider">
+                                            <th>Name</th>
+                                            <th>Description</th>
+                                            <th>Preview</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template x-for="s in scripts" :key="s.id">
+                                            <tr class="hover:bg-base-300/50 border-b border-base-300">
+                                                <td class="font-mono text-xs text-primary font-semibold" x-text="s.name"></td>
+                                                <td class="font-mono text-xs text-base-content/70" x-text="s.description || '—'"></td>
+                                                <td class="font-mono text-xs text-base-content/50 max-w-xs truncate" x-text="s.script_content.split('\n')[0]"></td>
+                                                <td class="whitespace-nowrap">
+                                                    <button class="btn btn-ghost btn-xs rounded-sm text-primary" @click="openEditScript(s)" title="Edit">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                    </button>
+                                                    <button class="btn btn-ghost btn-xs rounded-sm text-error" @click="deleteScript(s.id)" title="Delete">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -126,8 +180,9 @@
                                         <td>
                                             <span class="text-base-content/70 font-mono text-xs" x-text="scan.findings.length"></span>
                                         </td>
-                                        <td>
+                                        <td class="whitespace-nowrap">
                                             <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="fetchScanDetails(scan.id)">View</button>
+                                            <button class="btn btn-outline btn-error btn-xs rounded-sm font-mono ml-1" @click="deleteScan(scan.id)">Del</button>
                                         </td>
                                     </tr>
                                 </template>
@@ -196,26 +251,12 @@
                                                     }"
                                                     x-text="finding.severity || 'MEDIUM'"></span>
                                             </td>
-                                            <td class="font-mono text-xs break-words whitespace-normal"
-                                                :class="{
-                                                    'text-error font-semibold': finding.severity === 'CRITICAL',
-                                                    'text-warning font-semibold': finding.severity === 'HIGH',
-                                                    'text-base-content': finding.severity === 'MEDIUM' || finding.severity === 'LOW'
-                                                }"
+                                            <td class="font-mono text-xs break-words whitespace-normal font-semibold"
                                                 x-text="finding.subject"></td>
-                                            <td class="font-mono text-xs break-words whitespace-normal"
-                                                :class="{
-                                                    'text-error/80': finding.severity === 'CRITICAL',
-                                                    'text-warning/80': finding.severity === 'HIGH',
-                                                    'text-base-content/80': finding.severity === 'MEDIUM' || finding.severity === 'LOW'
-                                                }"
+                                            <td class="font-mono text-xs break-words whitespace-normal text-base-content/80"
                                                 x-text="finding.role"></td>
-                                            <td class="text-xs font-mono break-words whitespace-normal"
-                                                :class="{
-                                                    'text-error font-semibold': finding.severity === 'CRITICAL',
-                                                    'text-warning': finding.severity === 'HIGH',
-                                                    'text-base-content/90': finding.severity === 'MEDIUM' || finding.severity === 'LOW'
-                                                }"
+                                            <td class="text-xs font-mono break-words whitespace-normal text-base-content/90"
+                                                :class="{'font-semibold': finding.severity === 'CRITICAL'}"
                                                 x-text="finding.risk_description"></td>
                                         </tr>
                                     </template>
@@ -231,47 +272,120 @@
 
                 <!-- Tab 4: Threat Knowledge Base -->
                 <div x-show="activeTab === 'kb'" x-transition.opacity x-cloak>
-                    <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Threat Knowledge Base</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <template x-for="rule in rules" :key="rule.description">
-                            <div class="bg-base-100 border rounded-sm p-4"
-                                :class="{
-                                    'border-error/50': rule.severity === 'CRITICAL',
-                                    'border-warning/40': rule.severity === 'HIGH',
-                                    'border-info/30': rule.severity === 'MEDIUM',
-                                    'border-base-300': rule.severity === 'LOW' || !rule.severity
-                                }">
-                                <div class="flex justify-between items-start gap-2">
-                                    <span class="badge badge-sm rounded-sm font-mono uppercase tracking-wider"
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-base-content font-mono uppercase tracking-wider">Threat Knowledge Base</h2>
+                        <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary font-mono" @click="openAddRule()">
+                            + Add Rule
+                        </button>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="flex flex-wrap items-center gap-2 mb-3 p-2 bg-base-200 border border-base-300 rounded-sm">
+                        <input type="text" x-model="kbSearch" placeholder="Search description..."
+                            class="input input-bordered input-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono w-52" />
+                        <select x-model="kbCategoryFilter" class="select select-bordered select-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono">
+                            <option value="">All categories</option>
+                            <option value="rbac">RBAC</option>
+                            <option value="workload">Workload</option>
+                            <option value="network">Network</option>
+                        </select>
+                        <select x-model="kbSeverityFilter" class="select select-bordered select-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono">
+                            <option value="">All severities</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                        </select>
+                        <span class="ml-auto text-xs font-mono text-base-content/40 whitespace-nowrap"
+                            x-text="`${filteredRules.length} / ${rules.length} rules`"></span>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
+                        <table class="table table-sm w-full">
+                            <thead>
+                                <tr class="bg-base-200 border-b border-base-300 text-base-content/60">
+                                    <th class="font-mono text-xs uppercase tracking-wider w-10 cursor-pointer select-none hover:text-base-content"
+                                        @click="kbSortBy('id')">
+                                        <span class="flex items-center gap-1">#
+                                            <span class="text-base-content/30" x-text="kbSortCol === 'id' ? (kbSortDir === 'asc' ? '↑' : '↓') : '↕'"></span>
+                                        </span>
+                                    </th>
+                                    <th class="font-mono text-xs uppercase tracking-wider w-28 cursor-pointer select-none hover:text-base-content"
+                                        @click="kbSortBy('category')">
+                                        <span class="flex items-center gap-1">Category
+                                            <span class="text-base-content/30" x-text="kbSortCol === 'category' ? (kbSortDir === 'asc' ? '↑' : '↓') : '↕'"></span>
+                                        </span>
+                                    </th>
+                                    <th class="font-mono text-xs uppercase tracking-wider w-28 cursor-pointer select-none hover:text-base-content"
+                                        @click="kbSortBy('severity')">
+                                        <span class="flex items-center gap-1">Severity
+                                            <span class="text-base-content/30" x-text="kbSortCol === 'severity' ? (kbSortDir === 'asc' ? '↑' : '↓') : '↕'"></span>
+                                        </span>
+                                    </th>
+                                    <th class="font-mono text-xs uppercase tracking-wider">Description &amp; Parameters</th>
+                                    <th class="font-mono text-xs uppercase tracking-wider w-20 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="rule in filteredRules" :key="rule.id">
+                                    <tr class="hover:bg-base-300/30 border-b border-base-300"
                                         :class="{
-                                            'badge-secondary': rule.category === 'rbac',
-                                            'badge-accent': rule.category === 'workload',
-                                            'badge-info': rule.category === 'network'
-                                        }"
-                                        x-text="rule.category"></span>
-                                    <span class="badge badge-sm rounded-sm font-bold uppercase tracking-wider"
-                                        :class="{
-                                            'badge-error': rule.severity === 'CRITICAL',
-                                            'badge-warning': rule.severity === 'HIGH',
-                                            'badge-info': rule.severity === 'MEDIUM',
-                                            'badge-ghost': rule.severity === 'LOW' || !rule.severity
-                                        }"
-                                        x-text="rule.severity || 'MEDIUM'"></span>
-                                </div>
-                                <h3 class="mt-3 text-base font-mono text-base-content leading-snug" x-text="rule.description"></h3>
-                                <div class="mt-3 text-sm font-mono text-base-content/60" x-show="rule.dangerous_rules">
-                                    <div x-show="rule.dangerous_verbs" class="mb-1">Verbs: <span class="text-warning" x-text="rule.dangerous_verbs"></span></div>
-                                    <div x-show="rule.dangerous_resources" class="mb-1">Res: <span class="text-primary" x-text="rule.dangerous_resources"></span></div>
-                                    <div x-show="rule.key">Key: <span class="text-success" x-text="rule.key"></span></div>
-                                </div>
-                            </div>
-                        </template>
+                                            'bg-error/10 border-l-4 border-error': rule.severity === 'CRITICAL',
+                                            'bg-warning/5 border-l-4 border-warning': rule.severity === 'HIGH',
+                                            'border-l-4 border-info/40': rule.severity === 'MEDIUM'
+                                        }">
+                                        <td class="font-mono text-xs text-base-content/40 whitespace-nowrap" x-text="rule.id"></td>
+                                        <td class="whitespace-nowrap text-center">
+                                            <span class="badge badge-sm rounded-sm font-mono uppercase tracking-wider"
+                                                :class="{
+                                                    'badge-secondary': rule.category === 'rbac',
+                                                    'badge-accent': rule.category === 'workload',
+                                                    'badge-info': rule.category === 'network'
+                                                }"
+                                                x-text="rule.category"></span>
+                                        </td>
+                                        <td class="whitespace-nowrap text-center">
+                                            <span class="font-mono text-xs font-bold uppercase tracking-wider"
+                                                :class="{
+                                                    'text-error': rule.severity === 'CRITICAL',
+                                                    'text-warning': rule.severity === 'HIGH',
+                                                    'text-info': rule.severity === 'MEDIUM',
+                                                    'text-base-content/50': rule.severity === 'LOW' || !rule.severity
+                                                }"
+                                                x-text="rule.severity || 'MEDIUM'"></span>
+                                        </td>
+                                        <td class="py-2.5">
+                                            <div class="font-mono text-sm font-semibold text-base-content leading-snug" x-text="rule.description"></div>
+                                            <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-xs text-base-content/50">
+                                                <span x-show="rule.dangerous_verbs">Verbs:&nbsp;<span class="text-warning" x-text="rule.dangerous_verbs"></span></span>
+                                                <span x-show="rule.dangerous_resources">Resources:&nbsp;<span class="text-primary" x-text="rule.dangerous_resources"></span></span>
+                                                <span x-show="rule.key">Key:&nbsp;<span class="text-success" x-text="rule.key"></span></span>
+                                            </div>
+                                        </td>
+                                        <td class="whitespace-nowrap text-right">
+                                            <button class="btn btn-ghost btn-xs rounded-sm text-primary" title="Edit" @click="openEditRule(rule)">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                            </button>
+                                            <button class="btn btn-ghost btn-xs rounded-sm text-error" title="Delete" @click="deleteRule(rule.id)">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredRules.length === 0">
+                                    <td colspan="5" class="text-center py-8 text-base-content/40 font-mono text-xs"
+                                        x-text="rules.length === 0 ? 'No rules in the knowledge base.' : 'No rules match the current filters.'"></td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
             </div>
         </div>
 
+        <!-- Sidebar -->
         <div class="drawer-side">
             <label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
             <ul :class="sidebarExpanded ? 'w-72' : 'w-20'" class="flex flex-col p-0 min-h-full bg-base-200 text-base-content/70 border-r border-base-300">
@@ -291,19 +405,19 @@
                 </li>
 
                 <div class="flex-1">
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'dashboard' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'dashboard'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'dashboard' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'dashboard'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
                         <span x-show="sidebarExpanded">Dashboard</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'control' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'control'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'control' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'control'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         <span x-show="sidebarExpanded">Control Panel</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'history' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'history'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'history' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'history'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                         <span x-show="sidebarExpanded">History & Reports</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'kb' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'kb'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'kb' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'kb'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                         <span x-show="sidebarExpanded">Knowledge Base</span>
                     </a></li>
@@ -320,23 +434,166 @@
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════
+         MODAL: Add / Edit Rule
+    ═══════════════════════════════════════════════════════════ -->
+    <div class="modal" :class="{'modal-open': ruleModalOpen}" x-cloak>
+        <div class="modal-box rounded-sm bg-base-200 border border-base-300 max-w-lg w-full">
+            <h3 class="font-mono font-bold text-base-content uppercase tracking-wider mb-5 text-base"
+                x-text="ruleModalMode === 'create' ? '+ Add Detection Rule' : '✎ Edit Detection Rule'"></h3>
+
+            <div class="flex flex-col gap-3">
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Description *</span></label>
+                    <input type="text" x-model="ruleForm.description"
+                        class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary"
+                        placeholder="e.g. Чтение секретов (паролей, токенов)" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Category</span></label>
+                        <select x-model="ruleForm.category" class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary">
+                            <option value="rbac">rbac</option>
+                            <option value="workload">workload</option>
+                            <option value="network">network</option>
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Severity</span></label>
+                        <select x-model="ruleForm.severity" class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary">
+                            <option value="CRITICAL">CRITICAL</option>
+                            <option value="HIGH">HIGH</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="LOW">LOW</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Dangerous Verbs</span><span class="label-text-alt text-base-content/40 text-xs font-mono">comma-separated</span></label>
+                    <input type="text" x-model="ruleForm.dangerous_verbs"
+                        class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary"
+                        placeholder="get,list,watch" />
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Dangerous Resources</span><span class="label-text-alt text-base-content/40 text-xs font-mono">comma-separated</span></label>
+                    <input type="text" x-model="ruleForm.dangerous_resources"
+                        class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary"
+                        placeholder="secrets,pods" />
+                </div>
+                <div class="form-control" x-show="ruleForm.category === 'workload'">
+                    <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Key Path</span><span class="label-text-alt text-base-content/40 text-xs font-mono">dot-notation</span></label>
+                    <input type="text" x-model="ruleForm.key"
+                        class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary"
+                        placeholder="spec.containers.securityContext.privileged" />
+                </div>
+            </div>
+
+            <div x-show="ruleModalError" class="mt-3 p-2 bg-error/10 border border-error/30 rounded-sm text-error text-xs font-mono" x-text="ruleModalError"></div>
+
+            <div class="modal-action mt-5">
+                <button @click="ruleModalOpen = false; ruleModalError = ''" class="btn btn-ghost btn-sm rounded-sm font-mono uppercase">Cancel</button>
+                <button @click="saveRule()" :disabled="loading" class="btn btn-primary btn-sm rounded-sm font-mono uppercase">
+                    <span x-show="loading" class="loading loading-spinner loading-xs"></span>
+                    Save
+                </button>
+            </div>
+        </div>
+        <div class="modal-backdrop bg-black/40" @click="ruleModalOpen = false"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         MODAL: Add / Edit BAS Script
+    ═══════════════════════════════════════════════════════════ -->
+    <div class="modal" :class="{'modal-open': scriptModalOpen}" x-cloak>
+        <div class="modal-box rounded-sm bg-base-200 border border-base-300 max-w-2xl w-full">
+            <h3 class="font-mono font-bold text-base-content uppercase tracking-wider mb-5 text-base"
+                x-text="scriptModalMode === 'create' ? '+ New BAS Script' : '✎ Edit BAS Script'"></h3>
+
+            <div class="flex flex-col gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Name *</span></label>
+                        <input type="text" x-model="scriptForm.name"
+                            class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary"
+                            placeholder="e.g. whoami check" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Description</span></label>
+                        <input type="text" x-model="scriptForm.description"
+                            class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary"
+                            placeholder="Short description" />
+                    </div>
+                </div>
+                <div class="form-control">
+                    <label class="label py-1">
+                        <span class="label-text text-base-content/70 text-xs font-mono uppercase">Script Content *</span>
+                        <span class="label-text-alt text-base-content/40 text-xs font-mono">executed via /bin/sh -c inside the pod</span>
+                    </label>
+                    <textarea x-model="scriptForm.script_content" rows="8"
+                        class="font-mono text-sm bg-base-300 text-success p-4 rounded-sm border border-base-300 w-full focus:border-primary focus:outline-none resize-y"
+                        placeholder="#!/bin/sh&#10;whoami&#10;id&#10;cat /etc/passwd"></textarea>
+                </div>
+            </div>
+
+            <div x-show="scriptModalError" class="mt-3 p-2 bg-error/10 border border-error/30 rounded-sm text-error text-xs font-mono" x-text="scriptModalError"></div>
+
+            <div class="modal-action mt-5">
+                <button @click="scriptModalOpen = false; scriptModalError = ''" class="btn btn-ghost btn-sm rounded-sm font-mono uppercase">Cancel</button>
+                <button @click="saveScript()" :disabled="loading" class="btn btn-primary btn-sm rounded-sm font-mono uppercase">
+                    <span x-show="loading" class="loading loading-spinner loading-xs"></span>
+                    Save
+                </button>
+            </div>
+        </div>
+        <div class="modal-backdrop bg-black/40" @click="scriptModalOpen = false"></div>
+    </div>
+
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('appData', () => ({
+                // ── Tab & global state ─────────────────────────────────────
                 activeTab: 'dashboard',
-                scans: [],
-                rules: [],
-                selectedScanFindings: [],
-                viewingScan: null,
-                findingFilter: null,
-                findingSortDir: 'asc',
-                basPodName: '',
-                basNamespace: 'default',
-                basResult: null,
                 loading: false,
                 sidebarExpanded: true,
                 theme: localStorage.getItem('kra-theme') || 'dark',
 
+                // ── Data lists ─────────────────────────────────────────────
+                scans: [],
+                rules: [],
+                scripts: [],
+
+                // ── KB filter / sort ───────────────────────────────────────
+                kbSearch: '',
+                kbCategoryFilter: '',
+                kbSeverityFilter: '',
+                kbSortCol: 'id',
+                kbSortDir: 'asc',
+
+                // ── Findings detail / filter ───────────────────────────────
+                selectedScanFindings: [],
+                viewingScan: null,
+                findingFilter: null,
+                findingSortDir: 'asc',
+
+                // ── BAS form ───────────────────────────────────────────────
+                basPodName: '',
+                basNamespace: 'default',
+                basScriptId: '',
+                basResult: null,
+
+                // ── Rule modal ─────────────────────────────────────────────
+                ruleModalOpen: false,
+                ruleModalMode: 'create',
+                ruleModalError: '',
+                ruleForm: { id: null, description: '', category: 'rbac', severity: 'MEDIUM', dangerous_verbs: '', dangerous_resources: '', key: '' },
+
+                // ── Script modal ───────────────────────────────────────────
+                scriptModalOpen: false,
+                scriptModalMode: 'create',
+                scriptModalError: '',
+                scriptForm: { id: null, name: '', description: '', script_content: '' },
+
+                // ── Computed ───────────────────────────────────────────────
                 get filteredFindings() {
                     const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
                     const list = this.findingFilter
@@ -348,43 +605,82 @@
                     });
                 },
 
+                get filteredRules() {
+                    const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                    const CAT_ORDER = { rbac: 0, workload: 1, network: 2 };
+                    let list = this.rules;
+                    if (this.kbCategoryFilter) list = list.filter(r => r.category === this.kbCategoryFilter);
+                    if (this.kbSeverityFilter) list = list.filter(r => (r.severity || 'MEDIUM') === this.kbSeverityFilter);
+                    if (this.kbSearch) {
+                        const q = this.kbSearch.toLowerCase();
+                        list = list.filter(r => r.description.toLowerCase().includes(q));
+                    }
+                    return [...list].sort((a, b) => {
+                        let av, bv;
+                        if (this.kbSortCol === 'severity') {
+                            av = SEV_ORDER[a.severity || 'MEDIUM'] ?? 2;
+                            bv = SEV_ORDER[b.severity || 'MEDIUM'] ?? 2;
+                        } else if (this.kbSortCol === 'category') {
+                            av = CAT_ORDER[a.category] ?? 0;
+                            bv = CAT_ORDER[b.category] ?? 0;
+                        } else {
+                            av = a.id; bv = b.id;
+                        }
+                        return this.kbSortDir === 'asc' ? av - bv : bv - av;
+                    });
+                },
+
+                kbSortBy(col) {
+                    if (this.kbSortCol === col) {
+                        this.kbSortDir = this.kbSortDir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.kbSortCol = col;
+                        this.kbSortDir = 'asc';
+                    }
+                },
+
                 sevCount(sev) {
                     return this.selectedScanFindings.filter(f => f.severity === sev).length;
                 },
 
+                // ── Theme ──────────────────────────────────────────────────
                 toggleTheme() {
                     this.theme = this.theme === 'dark' ? 'light' : 'dark';
                     localStorage.setItem('kra-theme', this.theme);
                 },
 
+                // ── Init ───────────────────────────────────────────────────
                 async init() {
                     await this.fetchData();
-
-                    this.$watch('activeTab', (value, oldValue) => {
-                    });
-
-                    this.$watch('sidebarExpanded', () => {
-                    });
                 },
 
+                // ── Data fetchers ──────────────────────────────────────────
                 async fetchData() {
                     try {
-                        const [scansRes, rulesRes] = await Promise.all([
+                        const [scansRes, rulesRes, scriptsRes] = await Promise.all([
                             fetch('/scans'),
-                            fetch('/rules')
+                            fetch('/rules'),
+                            fetch('/scripts'),
                         ]);
                         this.scans = await scansRes.json();
                         this.rules = await rulesRes.json();
+                        this.scripts = await scriptsRes.json();
                     } catch (e) {
                         console.error('Failed to fetch data', e);
                     }
                 },
 
+                async fetchScripts() {
+                    const res = await fetch('/scripts');
+                    this.scripts = await res.json();
+                },
+
+                // ── Scan actions ───────────────────────────────────────────
                 async runOfflineScan() {
                     this.loading = true;
                     try {
                         const res = await fetch('/scan/offline', { method: 'POST' });
-                        if(res.ok) await this.fetchData();
+                        if (res.ok) await this.fetchData();
                         this.activeTab = 'history';
                     } catch (e) {
                         alert('Scan failed');
@@ -407,19 +703,10 @@
                     }
                 },
 
-                async runBas() {
-                    if (!this.basPodName) return;
-                    this.loading = true;
-                    this.basResult = null;
-                    try {
-                        const res = await fetch(`/bas/simulate/${this.basNamespace}/${this.basPodName}`, { method: 'POST' });
-                        this.basResult = await res.json();
-                        await this.fetchData();
-                    } catch (e) {
-                        this.basResult = { success: false, details: e.toString() };
-                    } finally {
-                        this.loading = false;
-                    }
+                async deleteScan(scanId) {
+                    if (!confirm(`Delete scan #${scanId} and all its findings?`)) return;
+                    await fetch(`/scans/${scanId}`, { method: 'DELETE' });
+                    await this.fetchData();
                 },
 
                 async fetchScanDetails(scanId) {
@@ -429,9 +716,150 @@
                         this.viewingScan = scanId;
                         this.findingFilter = null;
                         this.findingSortDir = 'asc';
-                    } catch(e) {
+                    } catch (e) {
                         console.error(e);
                     }
+                },
+
+                // ── BAS actions ────────────────────────────────────────────
+                async runBas() {
+                    if (!this.basPodName) return;
+                    this.loading = true;
+                    this.basResult = null;
+                    try {
+                        const body = { script_id: this.basScriptId ? parseInt(this.basScriptId) : null };
+                        const res = await fetch(`/bas/simulate/${this.basNamespace}/${this.basPodName}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        });
+                        this.basResult = await res.json();
+                        await this.fetchData();
+                    } catch (e) {
+                        this.basResult = { success: false, details: e.toString() };
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                // ── Rule CRUD ──────────────────────────────────────────────
+                openAddRule() {
+                    this.ruleForm = { id: null, description: '', category: 'rbac', severity: 'MEDIUM', dangerous_verbs: '', dangerous_resources: '', key: '' };
+                    this.ruleModalMode = 'create';
+                    this.ruleModalError = '';
+                    this.ruleModalOpen = true;
+                },
+
+                openEditRule(rule) {
+                    this.ruleForm = {
+                        id: rule.id,
+                        description: rule.description || '',
+                        category: rule.category || 'rbac',
+                        severity: rule.severity || 'MEDIUM',
+                        dangerous_verbs: rule.dangerous_verbs || '',
+                        dangerous_resources: rule.dangerous_resources || '',
+                        key: rule.key || '',
+                    };
+                    this.ruleModalMode = 'edit';
+                    this.ruleModalError = '';
+                    this.ruleModalOpen = true;
+                },
+
+                async saveRule() {
+                    if (!this.ruleForm.description.trim()) {
+                        this.ruleModalError = 'Description is required.';
+                        return;
+                    }
+                    this.loading = true;
+                    try {
+                        const payload = {
+                            description: this.ruleForm.description.trim(),
+                            category: this.ruleForm.category,
+                            severity: this.ruleForm.severity,
+                            dangerous_verbs: this.ruleForm.dangerous_verbs || null,
+                            dangerous_resources: this.ruleForm.dangerous_resources || null,
+                            key: this.ruleForm.key || null,
+                        };
+                        const url = this.ruleModalMode === 'create' ? '/rules' : `/rules/${this.ruleForm.id}`;
+                        const method = this.ruleModalMode === 'create' ? 'POST' : 'PUT';
+                        const res = await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        });
+                        if (!res.ok) throw new Error(await res.text());
+                        this.ruleModalOpen = false;
+                        await this.fetchData();
+                    } catch (e) {
+                        this.ruleModalError = 'Error: ' + e.message;
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async deleteRule(ruleId) {
+                    if (!confirm(`Delete rule #${ruleId}? This cannot be undone.`)) return;
+                    await fetch(`/rules/${ruleId}`, { method: 'DELETE' });
+                    await this.fetchData();
+                },
+
+                // ── Script CRUD ────────────────────────────────────────────
+                openAddScript() {
+                    this.scriptForm = { id: null, name: '', description: '', script_content: '' };
+                    this.scriptModalMode = 'create';
+                    this.scriptModalError = '';
+                    this.scriptModalOpen = true;
+                },
+
+                openEditScript(script) {
+                    this.scriptForm = {
+                        id: script.id,
+                        name: script.name || '',
+                        description: script.description || '',
+                        script_content: script.script_content || '',
+                    };
+                    this.scriptModalMode = 'edit';
+                    this.scriptModalError = '';
+                    this.scriptModalOpen = true;
+                },
+
+                async saveScript() {
+                    if (!this.scriptForm.name.trim()) {
+                        this.scriptModalError = 'Name is required.';
+                        return;
+                    }
+                    if (!this.scriptForm.script_content.trim()) {
+                        this.scriptModalError = 'Script content is required.';
+                        return;
+                    }
+                    this.loading = true;
+                    try {
+                        const payload = {
+                            name: this.scriptForm.name.trim(),
+                            description: this.scriptForm.description.trim() || null,
+                            script_content: this.scriptForm.script_content,
+                        };
+                        const url = this.scriptModalMode === 'create' ? '/scripts' : `/scripts/${this.scriptForm.id}`;
+                        const method = this.scriptModalMode === 'create' ? 'POST' : 'PUT';
+                        const res = await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        });
+                        if (!res.ok) throw new Error(await res.text());
+                        this.scriptModalOpen = false;
+                        await this.fetchScripts();
+                    } catch (e) {
+                        this.scriptModalError = 'Error: ' + e.message;
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async deleteScript(scriptId) {
+                    if (!confirm(`Delete script #${scriptId}?`)) return;
+                    await fetch(`/scripts/${scriptId}`, { method: 'DELETE' });
+                    await this.fetchScripts();
                 },
 
             }));

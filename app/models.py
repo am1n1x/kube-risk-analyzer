@@ -22,7 +22,7 @@ class ScanHistory(Base):
     scan_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     target_name = Column(String)
 
-    findings = relationship("Finding", back_populates="scan")
+    findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
 
 
 class Finding(Base):
@@ -36,3 +36,12 @@ class Finding(Base):
     severity = Column(String, default="MEDIUM")
 
     scan = relationship("ScanHistory", back_populates="findings")
+
+
+class BasScript(Base):
+    __tablename__ = "bas_scripts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    description = Column(String, nullable=True)
+    script_content = Column(String)

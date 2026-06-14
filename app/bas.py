@@ -260,6 +260,23 @@ SIMULATIONS = [
 ]
 
 
+def simulate_custom_script(pod_name: str, namespace: str = "default",
+                           script_content: str = "", core_v1=None) -> dict:
+    """Execute a user-provided shell script inside a pod via kubectl exec."""
+    if core_v1 is None:
+        core_v1 = _connect()
+    output = _exec_in_pod(core_v1, pod_name, namespace, ["/bin/sh", "-c", script_content])
+    success = bool(output and output.strip())
+    return _result(
+        pod_name, namespace,
+        attack="custom_script",
+        success=success,
+        details=output.strip() if output else "No output",
+        severity="HIGH",
+        mitre="T1059.004",
+    )
+
+
 def run_all_simulations(pod_name: str, namespace: str = "default") -> dict:
     """Run the full BAS suite against a target pod and return aggregated results."""
     try:

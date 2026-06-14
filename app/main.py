@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, Body
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
@@ -10,7 +10,7 @@ from .scanners.rbac import analyze_rbac_bindings, get_sa_rbac_dangers
 from .scanners.workload import analyze_pod_workload
 from .scanners.network import analyze_services
 from .k8s_client import get_live_k8s_data
-from .bas import simulate_token_theft
+from .bas import simulate_token_theft, simulate_custom_script
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -33,6 +33,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Kube Risk Analyzer API", lifespan=lifespan)
 
+
+# ── Utility ───────────────────────────────────────────────────────────────────
+
 @app.get("/")
 def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
@@ -41,10 +44,62 @@ def read_root(request: Request):
 def health_check():
     return {"status": "ok"}
 
+
+# ── Rules CRUD ────────────────────────────────────────────────────────────────
+
 @app.get("/rules", response_model=list[schemas.RiskRuleSchema])
 def get_rules(db: Session = Depends(get_db)):
-    rules = db.query(models.RiskRule).all()
-    return rules
+    return db.query(models.RiskRule).all()
+
+@app.post("/rules", response_model=schemas.RiskRuleSchema, status_code=201)
+def create_rule(rule: schemas.RiskRuleCreate, db: Session = Depends(get_db)):
+    db_rule = models.RiskRule(**rule.model_dump())
+    db.add(db_rule)
+    db.commit()
+    db.refresh(db_rule)
+    return db_rule
+
+@app.put("/rules/{rule_id}", response_model=schemas.RiskRuleSchema)
+def update_rule(rule_id: int, rule: schemas.RiskRuleUpdate, db: Session = Depends(get_db)):
+    db_rule = db.query(models.RiskRule).filter(models.RiskRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    for field, value in rule.model_dump(exclude_none=True).items():
+        setattr(db_rule, field, value)
+    db.commit()
+    db.refresh(db_rule)
+    return db_rule
+
+@app.delete("/rules/{rule_id}", status_code=204)
+def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+    db_rule = db.query(models.RiskRule).filter(models.RiskRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    db.delete(db_rule)
+    db.commit()
+
+
+# ── Scans ─────────────────────────────────────────────────────────────────────
+
+@app.get("/scans", response_model=list[schemas.ScanHistorySchema])
+def get_scans(db: Session = Depends(get_db)):
+    return db.query(models.ScanHistory).order_by(models.ScanHistory.id.desc()).all()
+
+@app.get("/scans/{scan_id}", response_model=list[schemas.FindingSchema])
+def get_scan(scan_id: int, db: Session = Depends(get_db)):
+    findings = db.query(models.Finding).filter(models.Finding.scan_id == scan_id).all()
+    return sorted(findings, key=_severity_key)
+
+@app.delete("/scans/{scan_id}", status_code=204)
+def delete_scan(scan_id: int, db: Session = Depends(get_db)):
+    scan = db.query(models.ScanHistory).filter(models.ScanHistory.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    db.delete(scan)  # cascade="all, delete-orphan" removes findings automatically
+    db.commit()
+
+
+# ── Offline scan ──────────────────────────────────────────────────────────────
 
 @app.post("/scan/offline")
 def scan_offline(db: Session = Depends(get_db)):
@@ -94,67 +149,63 @@ def scan_offline(db: Session = Depends(get_db)):
     findings_count = len(findings)
 
     for finding_data in findings:
-        finding = models.Finding(
+        db.add(models.Finding(
             scan_id=scan.id,
             subject=finding_data["subject"],
             role=finding_data["role"],
             risk_description=finding_data["risk_description"],
             severity=finding_data.get("severity", "MEDIUM"),
-        )
-        db.add(finding)
+        ))
 
     for pod in pods:
         pod_name = pod.get("metadata", {}).get("name", "Unknown")
         pod_ns = pod.get("metadata", {}).get("namespace", "default")
         spec = pod.get("spec", {})
         sa_name = spec.get("serviceAccountName", "default")
-
-        containers = spec.get("containers", [])
-        images = ", ".join([c.get("image", "Unknown") for c in containers])
+        images = ", ".join([c.get("image", "Unknown") for c in spec.get("containers", [])])
 
         workload_dangers = analyze_pod_workload(pod, workload_rules)
         sa_rbac_dangers = get_sa_rbac_dangers(sa_name, pod_ns, bindings, roles, cluster_roles, rbac_rules)
 
         for danger_desc, danger_sev in workload_dangers:
-            finding = models.Finding(
+            db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=images,
                 risk_description=danger_desc,
                 severity=danger_sev,
-            )
-            db.add(finding)
+            ))
             findings_count += 1
 
         if workload_dangers and sa_rbac_dangers:
-            w_descs = ", ".join(d for d, _ in workload_dangers)
-            r_descs = ", ".join(d for d, _ in sa_rbac_dangers)
-            correlated = models.Finding(
+            db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=f"SA:{sa_name} | images: {images}",
-                risk_description=f"CRITICAL CHAIN: Pod is vulnerable ({w_descs}) and its ServiceAccount '{sa_name}' has dangerous RBAC rights ({r_descs})",
+                risk_description=(
+                    f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(d for d, _ in workload_dangers)}) "
+                    f"and its ServiceAccount '{sa_name}' has dangerous RBAC rights "
+                    f"({', '.join(d for d, _ in sa_rbac_dangers)})"
+                ),
                 severity="CRITICAL",
-            )
-            db.add(correlated)
+            ))
             findings_count += 1
 
-    net_findings = analyze_services(services, network_rules)
-    for net_f in net_findings:
-        finding = models.Finding(
+    for net_f in analyze_services(services, network_rules):
+        db.add(models.Finding(
             scan_id=scan.id,
             subject=net_f["subject"],
             role=net_f["role"],
             risk_description=net_f["risk_description"],
             severity=net_f.get("severity", "MEDIUM"),
-        )
-        db.add(finding)
+        ))
         findings_count += 1
 
     db.commit()
-
     return {"scan_id": scan.id, "findings_count": findings_count, "status": "success"}
 
+
+# ── Live scan ─────────────────────────────────────────────────────────────────
 
 @app.post("/scan/live")
 def scan_live(db: Session = Depends(get_db)):
@@ -193,87 +244,123 @@ def scan_live(db: Session = Depends(get_db)):
     findings_count = len(findings)
 
     for finding_data in findings:
-        finding = models.Finding(
+        db.add(models.Finding(
             scan_id=scan.id,
             subject=finding_data["subject"],
             role=finding_data["role"],
             risk_description=finding_data["risk_description"],
             severity=finding_data.get("severity", "MEDIUM"),
-        )
-        db.add(finding)
+        ))
 
     for pod in pods:
         pod_name = pod.get("metadata", {}).get("name", "Unknown")
         pod_ns = pod.get("metadata", {}).get("namespace", "default")
         spec = pod.get("spec", {})
         sa_name = spec.get("serviceAccountName", "default")
-
-        containers = spec.get("containers", [])
-        images = ", ".join([c.get("image", "Unknown") for c in containers])
+        images = ", ".join([c.get("image", "Unknown") for c in spec.get("containers", [])])
 
         workload_dangers = analyze_pod_workload(pod, workload_rules)
         sa_rbac_dangers = get_sa_rbac_dangers(sa_name, pod_ns, bindings, roles, cluster_roles, rbac_rules)
 
         for danger_desc, danger_sev in workload_dangers:
-            finding = models.Finding(
+            db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=images,
                 risk_description=danger_desc,
                 severity=danger_sev,
-            )
-            db.add(finding)
+            ))
             findings_count += 1
 
         if workload_dangers and sa_rbac_dangers:
-            w_descs = ", ".join(d for d, _ in workload_dangers)
-            r_descs = ", ".join(d for d, _ in sa_rbac_dangers)
-            correlated = models.Finding(
+            db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=f"SA:{sa_name} | images: {images}",
-                risk_description=f"CRITICAL CHAIN: Pod is vulnerable ({w_descs}) and its ServiceAccount '{sa_name}' has dangerous RBAC rights ({r_descs})",
+                risk_description=(
+                    f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(d for d, _ in workload_dangers)}) "
+                    f"and its ServiceAccount '{sa_name}' has dangerous RBAC rights "
+                    f"({', '.join(d for d, _ in sa_rbac_dangers)})"
+                ),
                 severity="CRITICAL",
-            )
-            db.add(correlated)
+            ))
             findings_count += 1
 
-    net_findings = analyze_services(services, network_rules)
-    for net_f in net_findings:
-        finding = models.Finding(
+    for net_f in analyze_services(services, network_rules):
+        db.add(models.Finding(
             scan_id=scan.id,
             subject=net_f["subject"],
             role=net_f["role"],
             risk_description=net_f["risk_description"],
             severity=net_f.get("severity", "MEDIUM"),
-        )
-        db.add(finding)
+        ))
         findings_count += 1
 
     db.commit()
-
     return {"scan_id": scan.id, "status": "success", "findings_count": findings_count}
 
 
-@app.get("/scans/{scan_id}", response_model=list[schemas.FindingSchema])
-def get_scan(scan_id: int, db: Session = Depends(get_db)):
-    findings = db.query(models.Finding).filter(models.Finding.scan_id == scan_id).all()
-    return sorted(findings, key=_severity_key)
+# ── BAS Scripts CRUD ──────────────────────────────────────────────────────────
 
-@app.get("/scans", response_model=list[schemas.ScanHistorySchema])
-def get_scans(db: Session = Depends(get_db)):
-    scans = db.query(models.ScanHistory).order_by(models.ScanHistory.id.desc()).all()
-    return scans
+@app.get("/scripts", response_model=list[schemas.BasScriptSchema])
+def get_scripts(db: Session = Depends(get_db)):
+    return db.query(models.BasScript).order_by(models.BasScript.id).all()
 
+@app.post("/scripts", response_model=schemas.BasScriptSchema, status_code=201)
+def create_script(script: schemas.BasScriptCreate, db: Session = Depends(get_db)):
+    db_script = models.BasScript(**script.model_dump())
+    db.add(db_script)
+    db.commit()
+    db.refresh(db_script)
+    return db_script
+
+@app.put("/scripts/{script_id}", response_model=schemas.BasScriptSchema)
+def update_script(script_id: int, script: schemas.BasScriptUpdate, db: Session = Depends(get_db)):
+    db_script = db.query(models.BasScript).filter(models.BasScript.id == script_id).first()
+    if not db_script:
+        raise HTTPException(status_code=404, detail="Script not found")
+    for field, value in script.model_dump(exclude_none=True).items():
+        setattr(db_script, field, value)
+    db.commit()
+    db.refresh(db_script)
+    return db_script
+
+@app.delete("/scripts/{script_id}", status_code=204)
+def delete_script(script_id: int, db: Session = Depends(get_db)):
+    db_script = db.query(models.BasScript).filter(models.BasScript.id == script_id).first()
+    if not db_script:
+        raise HTTPException(status_code=404, detail="Script not found")
+    db.delete(db_script)
+    db.commit()
+
+
+# ── BAS simulate ──────────────────────────────────────────────────────────────
 
 @app.post("/bas/simulate/{namespace}/{pod_name}")
-def simulate_bas(namespace: str, pod_name: str, db: Session = Depends(get_db)):
-    scan = models.ScanHistory(target_name=f"BAS Simulation: {namespace}/{pod_name}")
+def simulate_bas(
+    namespace: str,
+    pod_name: str,
+    req: schemas.BASSimulateRequest = Body(default=schemas.BASSimulateRequest()),
+    db: Session = Depends(get_db),
+):
+    script_content = None
+    script_label = "Token Theft"
+    if req.script_id:
+        db_script = db.query(models.BasScript).filter(models.BasScript.id == req.script_id).first()
+        if not db_script:
+            raise HTTPException(status_code=404, detail="Script not found")
+        script_content = db_script.script_content
+        script_label = db_script.name
+
+    scan = models.ScanHistory(target_name=f"BAS Simulation: {namespace}/{pod_name} [{script_label}]")
     db.add(scan)
     db.commit()
     db.refresh(scan)
 
-    result = simulate_token_theft(pod_name, namespace)
+    if script_content:
+        result = simulate_custom_script(pod_name, namespace, script_content)
+    else:
+        result = simulate_token_theft(pod_name, namespace)
 
     if result["success"]:
         risk_desc = f"🚨 SUCCESS (CRITICAL): {result['details']}"
@@ -282,14 +369,12 @@ def simulate_bas(namespace: str, pod_name: str, db: Session = Depends(get_db)):
         risk_desc = f"✅ BLOCKED: {result['details']}"
         severity = "LOW"
 
-    finding = models.Finding(
+    db.add(models.Finding(
         scan_id=scan.id,
         subject=f"Pod: {pod_name} (Active Exploit)",
         role=f"Namespace: {namespace}",
         risk_description=risk_desc,
         severity=severity,
-    )
-    db.add(finding)
+    ))
     db.commit()
-
     return {**result, "scan_id": scan.id}
