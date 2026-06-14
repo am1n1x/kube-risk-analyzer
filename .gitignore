@@ -56,10 +56,8 @@ htmlcov/
 
 .claude
 unpacked
-vkr.docx
+VKR.docx
 cluster_dump.yaml
-*.yaml
-*.yml
 
 *.db-wal
 *.db-shm
