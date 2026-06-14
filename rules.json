@@ -105,5 +105,65 @@
         "description": "КРИТИЧЕСКАЯ УГРОЗА: База данных выставлена в интернет",
         "dangerous_verbs": [],
         "dangerous_resources": ["services"]
+    },
+    {
+        "id": "DANGER-014",
+        "category": "rbac",
+        "severity": "CRITICAL",
+        "description": "Право на имперсонацию (повышение привилегий)",
+        "dangerous_verbs": ["impersonate"],
+        "dangerous_resources": ["users", "groups", "serviceaccounts"]
+    },
+    {
+        "id": "DANGER-015",
+        "category": "rbac",
+        "severity": "HIGH",
+        "description": "Право на проброс портов (port-forward) — обход сетевых политик",
+        "dangerous_verbs": ["create"],
+        "dangerous_resources": ["pods/portforward"]
+    },
+    {
+        "id": "DANGER-016",
+        "category": "rbac",
+        "severity": "CRITICAL",
+        "description": "Генерация токенов ServiceAccount (кража личности)",
+        "dangerous_verbs": ["create"],
+        "dangerous_resources": ["serviceaccounts/token"]
+    },
+    {
+        "id": "DANGER-017",
+        "category": "workload",
+        "severity": "HIGH",
+        "description": "Разрешена эскалация привилегий в контейнере (allowPrivilegeEscalation)",
+        "key": "spec.containers.securityContext.allowPrivilegeEscalation",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["pods"]
+    },
+    {
+        "id": "DANGER-018",
+        "category": "workload",
+        "severity": "CRITICAL",
+        "description": "Доступ к процессам хоста (hostPID) — риск побега из контейнера",
+        "key": "spec.hostPID",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["pods"]
+    },
+    {
+        "id": "DANGER-019",
+        "category": "workload",
+        "severity": "HIGH",
+        "description": "Доступ к межпроцессному взаимодействию хоста (hostIPC)",
+        "key": "spec.hostIPC",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["pods"]
+    },
+    {
+        "id": "DANGER-020",
+        "category": "workload",
+        "severity": "HIGH",
+        "description": "Добавление дополнительных Linux Capabilities (опасность расширения привилегий)",
+        "key": "spec.containers.securityContext.capabilities.add",
+        "dangerous_verbs": [],
+        "dangerous_resources": ["pods"]
     }
 ]
