@@ -31,6 +31,8 @@
                 <!-- Tab 1: Dashboard -->
                 <div x-show="activeTab === 'dashboard'" x-cloak>
                     <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Dashboard</h2>
+
+                    <!-- Stat boxes -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                         <div class="stat bg-base-100 border border-base-300 rounded-sm">
                             <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">Total Scans</div>
@@ -43,6 +45,116 @@
                         <div class="stat bg-base-100 border border-base-300 rounded-sm">
                             <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">Active Rules</div>
                             <div class="stat-value text-base-content" x-text="rules.length"></div>
+                        </div>
+                    </div>
+
+                    <!-- Pods & Workloads -->
+                    <div class="mb-6">
+                        <div class="flex items-center gap-3 mb-3">
+                            <h3 class="text-base font-bold text-base-content font-mono uppercase tracking-wider">Pods &amp; Workloads</h3>
+                            <span x-show="clusterPodsSource === 'loading'" class="loading loading-spinner loading-xs text-primary"></span>
+                            <span x-show="clusterPodsSource === 'live'" class="badge badge-sm rounded-sm badge-success font-mono uppercase tracking-wider">● Live Cluster</span>
+                            <span x-show="clusterPodsSource === 'unavailable'" class="badge badge-sm rounded-sm badge-warning font-mono uppercase tracking-wider">○ From Last Scan</span>
+                        </div>
+                        <div class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
+                            <table class="table table-sm w-full">
+                                <thead>
+                                    <tr class="bg-base-200 border-b border-base-300 text-base-content/60">
+                                        <th class="font-mono text-xs uppercase tracking-wider">Pod</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider">Namespace</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-28" x-show="clusterPodsSource === 'live'">Status</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-28" x-show="clusterPodsSource === 'live'">Node</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-24">Findings</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-28">Max Severity</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="pod in dashPods" :key="pod.name + '/' + pod.namespace">
+                                        <tr class="hover:bg-base-300/30 border-b border-base-300"
+                                            :class="{
+                                                'bg-error/10 border-l-4 border-error': pod.maxSeverity === 'CRITICAL',
+                                                'bg-warning/5 border-l-4 border-warning': pod.maxSeverity === 'HIGH',
+                                                'border-l-4 border-info/40': pod.maxSeverity === 'MEDIUM'
+                                            }">
+                                            <td class="font-mono text-xs font-semibold" x-text="pod.name"></td>
+                                            <td class="font-mono text-xs text-base-content/70" x-text="pod.namespace"></td>
+                                            <td class="text-center" x-show="clusterPodsSource === 'live'">
+                                                <span class="font-mono text-xs"
+                                                    :class="{
+                                                        'text-success': pod.phase === 'Running',
+                                                        'text-warning': pod.phase === 'Pending',
+                                                        'text-error': pod.phase === 'Failed',
+                                                        'text-base-content/40': pod.phase === 'Unknown' || pod.phase === 'Succeeded'
+                                                    }"
+                                                    x-text="pod.phase"></span>
+                                            </td>
+                                            <td class="font-mono text-xs text-base-content/50 text-center" x-show="clusterPodsSource === 'live'" x-text="pod.node || '—'"></td>
+                                            <td class="text-center">
+                                                <span class="font-mono text-sm font-bold"
+                                                    :class="pod.findingsCount > 0 ? 'text-error' : 'text-base-content/30'"
+                                                    x-text="pod.findingsCount"></span>
+                                            </td>
+                                            <td class="text-center">
+                                                <span x-show="pod.maxSeverity" class="font-mono text-xs font-bold uppercase tracking-wider"
+                                                    :class="{
+                                                        'text-error': pod.maxSeverity === 'CRITICAL',
+                                                        'text-warning': pod.maxSeverity === 'HIGH',
+                                                        'text-info': pod.maxSeverity === 'MEDIUM',
+                                                        'text-base-content/50': pod.maxSeverity === 'LOW'
+                                                    }"
+                                                    x-text="pod.maxSeverity"></span>
+                                                <span x-show="!pod.maxSeverity" class="font-mono text-xs text-base-content/25">—</span>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                    <tr x-show="dashPods.length === 0 && clusterPodsSource !== 'loading'">
+                                        <td colspan="6" class="text-center py-6 text-base-content/40 font-mono text-xs">No pod data available. Run a scan first.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Scan Targets -->
+                    <div>
+                        <h3 class="text-base font-bold text-base-content font-mono uppercase tracking-wider mb-3">Scan Targets</h3>
+                        <div class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
+                            <table class="table table-sm w-full">
+                                <thead>
+                                    <tr class="bg-base-200 border-b border-base-300 text-base-content/60">
+                                        <th class="font-mono text-xs uppercase tracking-wider">Target</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-44">Last Scan</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-24">Findings</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-20">Critical</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-20">High</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="t in dashTargets" :key="t.scan_id">
+                                        <tr class="hover:bg-base-300/30 border-b border-base-300"
+                                            :class="{
+                                                'bg-error/10 border-l-4 border-error': t.critical > 0,
+                                                'bg-warning/5 border-l-4 border-warning': t.critical === 0 && t.high > 0
+                                            }">
+                                            <td class="font-mono text-xs font-semibold" x-text="t.target"></td>
+                                            <td class="font-mono text-xs text-base-content/60 text-center whitespace-nowrap"
+                                                x-text="new Date(t.scan_date).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})"></td>
+                                            <td class="text-center font-mono text-sm font-bold"
+                                                :class="t.total > 0 ? 'text-base-content' : 'text-base-content/30'"
+                                                x-text="t.total"></td>
+                                            <td class="text-center font-mono text-xs font-bold"
+                                                :class="t.critical > 0 ? 'text-error' : 'text-base-content/25'"
+                                                x-text="t.critical"></td>
+                                            <td class="text-center font-mono text-xs font-bold"
+                                                :class="t.high > 0 ? 'text-warning' : 'text-base-content/25'"
+                                                x-text="t.high"></td>
+                                        </tr>
+                                    </template>
+                                    <tr x-show="dashTargets.length === 0">
+                                        <td colspan="5" class="text-center py-6 text-base-content/40 font-mono text-xs">No scan targets yet. Run a scan first.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -58,14 +170,69 @@
                                 <h2 class="text-base font-bold text-base-content font-mono uppercase tracking-wider">Vulnerability Scanners</h2>
                                 <p class="text-sm text-base-content/70 mt-1">Run static analysis against Kubernetes configurations.</p>
                                 <div class="flex flex-col gap-3 mt-5">
+
+                                    <!-- Offline scan -->
                                     <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full" @click="runOfflineScan()" :disabled="loading">
                                         <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
                                         Run Offline Scan (YAML)
                                     </button>
-                                    <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full" @click="runLiveScan()" :disabled="loading">
-                                        <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
-                                        Run Live Cluster Scan
-                                    </button>
+
+                                    <!-- Live scan with optional scope -->
+                                    <div class="border border-base-300 rounded-sm p-3 flex flex-col gap-2">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs font-mono text-base-content/50 uppercase tracking-wider">Live Cluster Scan</span>
+                                            <span x-show="clusterPodsSource === 'live'" class="text-xs font-mono text-success">● Live</span>
+                                        </div>
+
+                                        <!-- Namespace -->
+                                        <div class="form-control w-full">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs font-mono text-base-content/60 uppercase tracking-wider">Namespace</span>
+                                                <span class="label-text-alt text-xs font-mono text-base-content/35">optional</span>
+                                            </label>
+                                            <select x-show="clusterPodsSource === 'live'"
+                                                x-model="liveScanNamespace"
+                                                @change="liveScanPodName = ''"
+                                                class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono">
+                                                <option value="">— All namespaces —</option>
+                                                <template x-for="ns in basNamespaces" :key="ns">
+                                                    <option :value="ns" x-text="ns"></option>
+                                                </template>
+                                            </select>
+                                            <input x-show="clusterPodsSource !== 'live'"
+                                                type="text" x-model="liveScanNamespace"
+                                                class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono"
+                                                placeholder="All namespaces" />
+                                        </div>
+
+                                        <!-- Pod -->
+                                        <div class="form-control w-full">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs font-mono text-base-content/60 uppercase tracking-wider">Pod</span>
+                                                <span class="label-text-alt text-xs font-mono text-base-content/35">optional</span>
+                                            </label>
+                                            <select x-show="clusterPodsSource === 'live'"
+                                                x-model="liveScanPodName"
+                                                :disabled="!liveScanNamespace"
+                                                class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono disabled:opacity-50">
+                                                <option value="" x-text="liveScanNamespace ? '— All pods in namespace —' : '— Select namespace first —'"></option>
+                                                <template x-for="pod in liveScanPodsForNs" :key="pod.name">
+                                                    <option :value="pod.name"
+                                                        x-text="pod.name + (pod.phase !== 'Running' ? ' [' + pod.phase + ']' : '')"></option>
+                                                </template>
+                                            </select>
+                                            <input x-show="clusterPodsSource !== 'live'"
+                                                type="text" x-model="liveScanPodName"
+                                                class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono"
+                                                placeholder="All pods" />
+                                        </div>
+
+                                        <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full mt-1" @click="runLiveScan()" :disabled="loading">
+                                            <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
+                                            <span x-text="liveScanPodName ? 'Scan Pod: ' + liveScanPodName : (liveScanNamespace ? 'Scan Namespace: ' + liveScanNamespace : 'Run Live Cluster Scan')"></span>
+                                        </button>
+                                    </div>
+
                                 </div>
                             </div>
                         </div>
@@ -76,12 +243,42 @@
                                 <h2 class="text-base font-bold text-error font-mono uppercase tracking-wider">Breach & Attack Simulation</h2>
                                 <p class="text-sm text-base-content/70 mt-1">Simulate real-world attacks to validate defenses.</p>
                                 <div class="form-control w-full mt-3">
-                                    <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Namespace</span></label>
-                                    <input type="text" x-model="basNamespace" class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary focus:ring-1 focus:ring-primary" placeholder="default" />
+                                    <label class="label py-1">
+                                        <span class="label-text text-base-content/70 text-sm font-mono uppercase">Namespace</span>
+                                        <span x-show="clusterPodsSource === 'live'" class="label-text-alt text-xs font-mono text-success">● Live</span>
+                                    </label>
+                                    <select x-show="clusterPodsSource === 'live'"
+                                        x-model="basNamespace"
+                                        @change="basPodName = ''"
+                                        class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono">
+                                        <option value="">— Select namespace —</option>
+                                        <template x-for="ns in basNamespaces" :key="ns">
+                                            <option :value="ns" x-text="ns"></option>
+                                        </template>
+                                    </select>
+                                    <input x-show="clusterPodsSource !== 'live'"
+                                        type="text" x-model="basNamespace"
+                                        class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary focus:ring-1 focus:ring-primary font-mono"
+                                        placeholder="default" />
                                 </div>
                                 <div class="form-control w-full mt-2">
-                                    <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Pod Name</span></label>
-                                    <input type="text" x-model="basPodName" class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary focus:ring-1 focus:ring-primary" placeholder="e.g. nginx-pod" />
+                                    <label class="label py-1">
+                                        <span class="label-text text-base-content/70 text-sm font-mono uppercase">Pod Name</span>
+                                    </label>
+                                    <select x-show="clusterPodsSource === 'live'"
+                                        x-model="basPodName"
+                                        :disabled="!basNamespace"
+                                        class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono disabled:opacity-50">
+                                        <option value="" x-text="basNamespace ? '— Select pod —' : '— Select namespace first —'"></option>
+                                        <template x-for="pod in basPodsForNs" :key="pod.name">
+                                            <option :value="pod.name"
+                                                x-text="pod.name + (pod.phase !== 'Running' ? ' [' + pod.phase + ']' : '')"></option>
+                                        </template>
+                                    </select>
+                                    <input x-show="clusterPodsSource !== 'live'"
+                                        type="text" x-model="basPodName"
+                                        class="input input-bordered input-sm rounded-sm border-base-100 bg-base-100 text-base-content w-full focus:border-primary focus:ring-1 focus:ring-primary font-mono"
+                                        placeholder="e.g. nginx-pod" />
                                 </div>
                                 <div class="form-control w-full mt-2">
                                     <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Attack Script</span></label>
@@ -562,6 +759,14 @@
                 rules: [],
                 scripts: [],
 
+                // ── Cluster pods ───────────────────────────────────────────
+                clusterPods: [],
+                clusterPodsSource: 'loading',
+
+                // ── Live scan scope ────────────────────────────────────────
+                liveScanNamespace: '',
+                liveScanPodName: '',
+
                 // ── KB filter / sort ───────────────────────────────────────
                 kbSearch: '',
                 kbCategoryFilter: '',
@@ -639,6 +844,88 @@
                     }
                 },
 
+                get dashPods() {
+                    const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                    const findings = this.scans[0] ? (this.scans[0].findings || []) : [];
+                    let pods = [];
+                    if (this.clusterPodsSource === 'live' && this.clusterPods.length > 0) {
+                        pods = this.clusterPods.map(pod => {
+                            const pf = findings.filter(f =>
+                                f.subject === `Pod: ${pod.name}` ||
+                                f.subject.startsWith(`Pod: ${pod.name} `)
+                            );
+                            const maxSev = pf.reduce((best, f) =>
+                                best === null || (SEV_ORDER[f.severity] ?? 2) < (SEV_ORDER[best] ?? 2) ? f.severity : best
+                            , null);
+                            return { name: pod.name, namespace: pod.namespace, phase: pod.phase || 'Unknown', node: pod.node || '', findingsCount: pf.length, maxSeverity: maxSev };
+                        });
+                    } else {
+                        const podMap = {};
+                        findings.forEach(f => {
+                            const m = f.subject.match(/^Pod:\s+(.+?)(?:\s+\(.*\))?$/);
+                            if (!m) return;
+                            const key = m[1];
+                            if (!podMap[key]) podMap[key] = { name: key, namespace: '—', phase: '—', node: '—', findingsCount: 0, _sevs: [] };
+                            podMap[key].findingsCount++;
+                            podMap[key]._sevs.push(f.severity);
+                        });
+                        pods = Object.values(podMap).map(p => {
+                            const maxSev = p._sevs.sort((a, b) => (SEV_ORDER[a] ?? 2) - (SEV_ORDER[b] ?? 2))[0] || null;
+                            return { ...p, maxSeverity: maxSev };
+                        });
+                    }
+                    return pods.sort((a, b) => {
+                        const sd = (SEV_ORDER[a.maxSeverity] ?? 99) - (SEV_ORDER[b.maxSeverity] ?? 99);
+                        return sd !== 0 ? sd : b.findingsCount - a.findingsCount;
+                    });
+                },
+
+                get dashTargets() {
+                    const targetMap = {};
+                    this.scans.forEach(scan => {
+                        const n = scan.target_name;
+                        if (!targetMap[n] || scan.id > targetMap[n].id) targetMap[n] = scan;
+                    });
+                    return Object.values(targetMap).map(scan => {
+                        const f = scan.findings || [];
+                        return {
+                            target: scan.target_name,
+                            scan_id: scan.id,
+                            scan_date: scan.scan_date,
+                            total: f.length,
+                            critical: f.filter(x => x.severity === 'CRITICAL').length,
+                            high: f.filter(x => x.severity === 'HIGH').length,
+                        };
+                    }).sort((a, b) => b.scan_id - a.scan_id);
+                },
+
+                get basNamespaces() {
+                    if (this.clusterPodsSource !== 'live') return [];
+                    return [...new Set(this.clusterPods.map(p => p.namespace))].sort();
+                },
+
+                get basPodsForNs() {
+                    if (this.clusterPodsSource !== 'live' || !this.basNamespace) return [];
+                    return this.clusterPods
+                        .filter(p => p.namespace === this.basNamespace)
+                        .sort((a, b) => {
+                            if (a.phase === 'Running' && b.phase !== 'Running') return -1;
+                            if (a.phase !== 'Running' && b.phase === 'Running') return 1;
+                            return a.name.localeCompare(b.name);
+                        });
+                },
+
+                get liveScanPodsForNs() {
+                    if (this.clusterPodsSource !== 'live' || !this.liveScanNamespace) return [];
+                    return this.clusterPods
+                        .filter(p => p.namespace === this.liveScanNamespace)
+                        .sort((a, b) => {
+                            if (a.phase === 'Running' && b.phase !== 'Running') return -1;
+                            if (a.phase !== 'Running' && b.phase === 'Running') return 1;
+                            return a.name.localeCompare(b.name);
+                        });
+                },
+
                 sevCount(sev) {
                     return this.selectedScanFindings.filter(f => f.severity === sev).length;
                 },
@@ -657,13 +944,18 @@
                 // ── Data fetchers ──────────────────────────────────────────
                 async fetchData() {
                     try {
-                        const [scansRes, rulesRes, scriptsRes] = await Promise.all([
+                        const [scansRes, rulesRes, scriptsRes, podsRes] = await Promise.all([
                             fetch('/scans'),
                             fetch('/rules'),
                             fetch('/scripts'),
+                            fetch('/cluster/pods'),
                         ]);
                         this.scans = await scansRes.json();
                         this.rules = await rulesRes.json();
+                        this.scripts = await scriptsRes.json();
+                        const podsData = await podsRes.json();
+                        this.clusterPods = podsData.pods || [];
+                        this.clusterPodsSource = podsData.source || 'unavailable';
                         this.scripts = await scriptsRes.json();
                     } catch (e) {
                         console.error('Failed to fetch data', e);
@@ -692,7 +984,11 @@
                 async runLiveScan() {
                     this.loading = true;
                     try {
-                        const res = await fetch('/scan/live', { method: 'POST' });
+                        const params = new URLSearchParams();
+                        if (this.liveScanNamespace) params.append('namespace', this.liveScanNamespace);
+                        if (this.liveScanPodName) params.append('pod_name', this.liveScanPodName);
+                        const qs = params.toString();
+                        const res = await fetch('/scan/live' + (qs ? '?' + qs : ''), { method: 'POST' });
                         if (!res.ok) throw new Error('Live scan request failed. ' + await res.text());
                         await this.fetchData();
                         this.activeTab = 'history';

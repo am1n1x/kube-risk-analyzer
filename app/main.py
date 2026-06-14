@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, Request, Body
+from fastapi import FastAPI, Depends, HTTPException, Request, Body, Query
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
@@ -43,6 +43,28 @@ def read_root(request: Request):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+# ── Cluster info ──────────────────────────────────────────────────────────────
+
+@app.get("/cluster/pods")
+def get_cluster_pod_list():
+    try:
+        k8s_data = get_live_k8s_data()
+        pods = []
+        for pod in k8s_data.get("pods", []):
+            meta = pod.get("metadata", {})
+            status = pod.get("status", {})
+            spec = pod.get("spec", {})
+            pods.append({
+                "name": meta.get("name"),
+                "namespace": meta.get("namespace", "default"),
+                "phase": status.get("phase", "Unknown"),
+                "node": spec.get("nodeName", ""),
+            })
+        return {"pods": pods, "source": "live"}
+    except Exception as e:
+        return {"pods": [], "source": "unavailable", "error": str(e)}
 
 
 # ── Rules CRUD ────────────────────────────────────────────────────────────────
@@ -208,8 +230,19 @@ def scan_offline(db: Session = Depends(get_db)):
 # ── Live scan ─────────────────────────────────────────────────────────────────
 
 @app.post("/scan/live")
-def scan_live(db: Session = Depends(get_db)):
-    scan = models.ScanHistory(target_name="Live Cluster (Minikube)")
+def scan_live(
+    namespace: str | None = Query(default=None),
+    pod_name: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    if pod_name and namespace:
+        target_name = f"Live Pod: {namespace}/{pod_name}"
+    elif namespace:
+        target_name = f"Live Namespace: {namespace}"
+    else:
+        target_name = "Live Cluster"
+
+    scan = models.ScanHistory(target_name=target_name)
     db.add(scan)
     db.commit()
     db.refresh(scan)
@@ -221,51 +254,81 @@ def scan_live(db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=503, detail=f"Failed to connect to Kubernetes cluster: {e}")
 
+    # Build full roles/cluster_roles dicts — needed for RBAC correlation in all modes
     roles = {}
     for r in k8s_data.get('roles', []):
-        namespace = r.get('metadata', {}).get('namespace', 'default')
-        name = r.get('metadata', {}).get('name')
-        roles[f"Role/{namespace}/{name}"] = r
+        r_ns = r.get('metadata', {}).get('namespace', 'default')
+        r_name = r.get('metadata', {}).get('name')
+        roles[f"Role/{r_ns}/{r_name}"] = r
 
     cluster_roles = {}
     for cr in k8s_data.get('cluster_roles', []):
-        name = cr.get('metadata', {}).get('name')
-        cluster_roles[f"ClusterRole/{name}"] = cr
+        cr_name = cr.get('metadata', {}).get('name')
+        cluster_roles[f"ClusterRole/{cr_name}"] = cr
 
-    bindings = k8s_data.get('role_bindings', []) + k8s_data.get('cluster_role_bindings', [])
+    all_bindings = k8s_data.get('role_bindings', []) + k8s_data.get('cluster_role_bindings', [])
+
+    # Filter pods
     pods = k8s_data.get('pods', [])
-    services = k8s_data.get('services', [])
+    if namespace:
+        pods = [p for p in pods if p.get('metadata', {}).get('namespace') == namespace]
+    if pod_name:
+        pods = [p for p in pods if p.get('metadata', {}).get('name') == pod_name]
+
+    # Filter services (skip for single-pod scope)
+    if pod_name:
+        services = []
+    else:
+        services = k8s_data.get('services', [])
+        if namespace:
+            services = [s for s in services if s.get('metadata', {}).get('namespace') == namespace]
+
+    # RBAC bindings to scan (skip full RBAC for single-pod scope)
+    if pod_name:
+        rbac_bindings = []
+    elif namespace:
+        rbac_bindings = [
+            b for b in all_bindings
+            if b.get('metadata', {}).get('namespace') == namespace
+            or b.get('kind') == 'ClusterRoleBinding'
+        ]
+    else:
+        rbac_bindings = all_bindings
 
     rbac_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'rbac').all()
     workload_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'workload').all()
     network_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'network').all()
 
-    findings = analyze_rbac_bindings(bindings, roles, cluster_roles, rbac_rules)
-    findings_count = len(findings)
+    findings_count = 0
 
-    for finding_data in findings:
-        db.add(models.Finding(
-            scan_id=scan.id,
-            subject=finding_data["subject"],
-            role=finding_data["role"],
-            risk_description=finding_data["risk_description"],
-            severity=finding_data.get("severity", "MEDIUM"),
-        ))
+    # RBAC scan (full cluster or namespace scope)
+    if not pod_name:
+        rbac_findings = analyze_rbac_bindings(rbac_bindings, roles, cluster_roles, rbac_rules)
+        findings_count += len(rbac_findings)
+        for f in rbac_findings:
+            db.add(models.Finding(
+                scan_id=scan.id,
+                subject=f["subject"],
+                role=f["role"],
+                risk_description=f["risk_description"],
+                severity=f.get("severity", "MEDIUM"),
+            ))
 
+    # Workload scan + SA RBAC correlation
     for pod in pods:
-        pod_name = pod.get("metadata", {}).get("name", "Unknown")
-        pod_ns = pod.get("metadata", {}).get("namespace", "default")
+        p_name = pod.get("metadata", {}).get("name", "Unknown")
+        p_ns = pod.get("metadata", {}).get("namespace", "default")
         spec = pod.get("spec", {})
         sa_name = spec.get("serviceAccountName", "default")
         images = ", ".join([c.get("image", "Unknown") for c in spec.get("containers", [])])
 
         workload_dangers = analyze_pod_workload(pod, workload_rules)
-        sa_rbac_dangers = get_sa_rbac_dangers(sa_name, pod_ns, bindings, roles, cluster_roles, rbac_rules)
+        sa_rbac_dangers = get_sa_rbac_dangers(sa_name, p_ns, all_bindings, roles, cluster_roles, rbac_rules)
 
         for danger_desc, danger_sev in workload_dangers:
             db.add(models.Finding(
                 scan_id=scan.id,
-                subject=f"Pod: {pod_name}",
+                subject=f"Pod: {p_name}",
                 role=images,
                 risk_description=danger_desc,
                 severity=danger_sev,
@@ -275,7 +338,7 @@ def scan_live(db: Session = Depends(get_db)):
         if workload_dangers and sa_rbac_dangers:
             db.add(models.Finding(
                 scan_id=scan.id,
-                subject=f"Pod: {pod_name}",
+                subject=f"Pod: {p_name}",
                 role=f"SA:{sa_name} | images: {images}",
                 risk_description=(
                     f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(d for d, _ in workload_dangers)}) "
@@ -286,15 +349,17 @@ def scan_live(db: Session = Depends(get_db)):
             ))
             findings_count += 1
 
-    for net_f in analyze_services(services, network_rules):
-        db.add(models.Finding(
-            scan_id=scan.id,
-            subject=net_f["subject"],
-            role=net_f["role"],
-            risk_description=net_f["risk_description"],
-            severity=net_f.get("severity", "MEDIUM"),
-        ))
-        findings_count += 1
+    # Network scan (full cluster or namespace scope)
+    if not pod_name:
+        for net_f in analyze_services(services, network_rules):
+            db.add(models.Finding(
+                scan_id=scan.id,
+                subject=net_f["subject"],
+                role=net_f["role"],
+                risk_description=net_f["risk_description"],
+                severity=net_f.get("severity", "MEDIUM"),
+            ))
+            findings_count += 1
 
     db.commit()
     return {"scan_id": scan.id, "status": "success", "findings_count": findings_count}
