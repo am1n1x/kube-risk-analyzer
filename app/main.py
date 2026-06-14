@@ -85,8 +85,11 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         sync_rules_to_db(db)
-        # Seed example BAS script if table is empty
-        if db.query(models.BasScript).count() == 0:
+        # Seed example BAS script if not already present
+        exists = db.query(models.BasScript).filter(
+            models.BasScript.name == "Cloud Metadata Theft"
+        ).first()
+        if not exists:
             db.add(models.BasScript(
                 name="Cloud Metadata Theft",
                 description="Simulates attacking cloud metadata endpoints (IMDSv1/IMDSv2) to leak instance credentials.",
