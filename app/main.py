@@ -249,6 +249,26 @@ def get_scans(db: Session = Depends(get_db)):
 
 
 @app.post("/bas/simulate/{namespace}/{pod_name}")
-def simulate_bas(namespace: str, pod_name: str):
+def simulate_bas(namespace: str, pod_name: str, db: Session = Depends(get_db)):
+    scan = models.ScanHistory(target_name=f"BAS Simulation: {namespace}/{pod_name}")
+    db.add(scan)
+    db.commit()
+    db.refresh(scan)
+
     result = simulate_token_theft(pod_name, namespace)
-    return result
+
+    if result["success"]:
+        risk_desc = f"🚨 SUCCESS (CRITICAL): {result['details']}"
+    else:
+        risk_desc = f"✅ BLOCKED: {result['details']}"
+
+    finding = models.Finding(
+        scan_id=scan.id,
+        subject=f"Pod: {pod_name} (Active Exploit)",
+        role=f"Namespace: {namespace}",
+        risk_description=risk_desc,
+    )
+    db.add(finding)
+    db.commit()
+
+    return {**result, "scan_id": scan.id}

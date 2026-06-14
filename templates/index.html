@@ -122,7 +122,10 @@
                                     <tr>
                                         <th x-text="scan.id"></th>
                                         <td x-text="new Date(scan.scan_date).toLocaleString()"></td>
-                                        <td x-text="scan.target_name"></td>
+                                        <td>
+                                            <span x-text="scan.target_name" class="inline-block mr-2"></span>
+                                            <span x-show="scan.target_name.includes('BAS Simulation')" class="badge badge-error badge-sm">BAS</span>
+                                        </td>
                                         <td>
                                             <div class="badge badge-accent" x-text="scan.findings.length"></div>
                                         </td>
@@ -298,6 +301,7 @@
                     try {
                         const res = await fetch(`/bas/simulate/${this.basNamespace}/${this.basPodName}`, { method: 'POST' });
                         this.basResult = await res.json();
+                        await this.fetchData();
                     } catch (e) {
                         this.basResult = { success: false, details: e.toString() };
                     } finally {
