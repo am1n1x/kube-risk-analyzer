@@ -11,6 +11,27 @@ def _connect() -> client.CoreV1Api:
     return client.CoreV1Api()
 
 
+_SHELL_ERROR_INDICATORS = [
+    "command not found",
+    "not found",
+    "permission denied",
+    "access denied",
+    "no such file or directory",
+    "cannot open",
+    "is a directory",
+    "failed",
+]
+
+
+def _output_is_error(output: str) -> bool:
+    """Check if the shell output only contains error indicators (case-insensitive)."""
+    stripped = (output or "").strip()
+    if not stripped:
+        return True
+    lower = stripped.lower()
+    return any(indicator in lower for indicator in _SHELL_ERROR_INDICATORS)
+
+
 def _exec_in_pod(core_v1: client.CoreV1Api, pod_name: str, namespace: str, command: list[str]) -> str:
     """Execute a shell command inside a running pod via the Kubernetes exec API."""
     return stream(
@@ -266,7 +287,7 @@ def simulate_custom_script(pod_name: str, namespace: str = "default",
     if core_v1 is None:
         core_v1 = _connect()
     output = _exec_in_pod(core_v1, pod_name, namespace, ["/bin/sh", "-c", script_content])
-    success = bool(output and output.strip())
+    success = bool(output and output.strip() and not _output_is_error(output))
     return _result(
         pod_name, namespace,
         attack="custom_script",

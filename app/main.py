@@ -686,8 +686,8 @@ def simulate_bas(
         result = simulate_token_theft(pod_name, namespace)
 
     if result["success"]:
-        risk_desc = f"🚨 SUCCESS (CRITICAL): {result['details']}"
-        severity = "CRITICAL"
+        severity = result.get("severity", "CRITICAL")
+        risk_desc = f"🚨 SUCCESS ({severity}): {result['details']}"
     else:
         risk_desc = f"✅ BLOCKED: {result['details']}"
         severity = "LOW"
