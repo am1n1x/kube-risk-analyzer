@@ -289,6 +289,7 @@ All blocked admissions are visible in History & Reports with `target_name` start
 - `backups/`: Server-side database backups. `.gitignore` excludes all files here.
 - `templates/index.html`: The entire frontend SPA (single file, ~1650 lines).
 - `app/static/`: Vendored CSS/JS assets for offline mode (Tailwind, DaisyUI, Alpine, ChartJS). **`app/static/js/vis-network.min.js`** — vendored vis-network 9.1.9 standalone build for offline Attack Path Graph rendering.
+- `Dockerfile`: Production container image. Base: `python:3.10-slim`, WORKDIR `/workspace`. Copies `app/`, `templates/`, `alembic/`, `alembic.ini`, `rules.json`. Creates empty `dumps/` and `backups/` dirs. Exposes port `8000`. **Note**: run `docker exec <container> alembic upgrade head` on first startup (or before running the container on a fresh volume) — the app requires migrated tables.
 
 **Instructions for the AI:**
 Adhere strictly to FastAPI dependency injection (`Depends(get_db)`). Ensure frontend changes utilize Alpine.js directives cleanly without breaking the SPA reactivity or the cyberpunk UI style. When adding endpoints, include them in the Endpoints Reference table above. When modifying Alpine.js state, update the state listing in section 12. When adding new columns to models, create a new Alembic migration — never call `create_all()`. Scanner functions must return 3-tuples `(description, severity, remediation)` — do not regress to 2-tuples.
