@@ -16,7 +16,14 @@ from .scanners.rbac import analyze_rbac_bindings, get_sa_rbac_dangers
 from .scanners.workload import analyze_pod_workload
 from .scanners.network import analyze_services
 from .k8s_client import get_live_k8s_data
-from .bas import simulate_token_theft, simulate_custom_script
+from .bas import (
+    simulate_token_theft,
+    simulate_custom_script,
+    simulate_container_socket_escape,
+    simulate_host_filesystem_access,
+    simulate_privilege_recon,
+    simulate_env_secret_leak,
+)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -26,6 +33,15 @@ DUMPS_DIR = "dumps"
 os.makedirs(DUMPS_DIR, exist_ok=True)
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
+BAS_SIMULATION_MAP = {
+    "token_theft": simulate_token_theft,
+    "socket_escape": simulate_container_socket_escape,
+    "host_filesystem": simulate_host_filesystem_access,
+    "privilege_recon": simulate_privilege_recon,
+    "env_leak": simulate_env_secret_leak,
+}
 
 
 def _severity_key(finding):
@@ -69,6 +85,19 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         sync_rules_to_db(db)
+        # Seed example BAS script if table is empty
+        if db.query(models.BasScript).count() == 0:
+            db.add(models.BasScript(
+                name="Cloud Metadata Theft",
+                description="Simulates attacking cloud metadata endpoints (IMDSv1/IMDSv2) to leak instance credentials.",
+                script_content=(
+                    "curl -s -m 2 -H 'Metadata: true' "
+                    "http://metadata.google.internal/computeMetadata/v1/instance/"
+                    "service-accounts/default/token 2>&1 || "
+                    "curl -s -m 2 http://169.254.169.254/latest/meta-data/ 2>&1"
+                ),
+            ))
+            db.commit()
         yield
     finally:
         db.close()
@@ -666,24 +695,35 @@ def simulate_bas(
     req: schemas.BASSimulateRequest = Body(default=schemas.BASSimulateRequest()),
     db: Session = Depends(get_db),
 ):
-    script_content = None
+    # Resolve simulation function and label
+    sim_func = None
     script_label = "Token Theft"
+
     if req.script_id:
         db_script = db.query(models.BasScript).filter(models.BasScript.id == req.script_id).first()
         if not db_script:
             raise HTTPException(status_code=404, detail="Script not found")
-        script_content = db_script.script_content
+        sim_func = lambda pn, ns: simulate_custom_script(pn, ns, db_script.script_content)
         script_label = db_script.name
+    elif req.simulation_type and req.simulation_type in BAS_SIMULATION_MAP:
+        sim_func = BAS_SIMULATION_MAP[req.simulation_type]
+        label_map = {
+            "token_theft": "Token Theft",
+            "socket_escape": "Socket Escape",
+            "host_filesystem": "Host Filesystem Access",
+            "privilege_recon": "Privilege Recon",
+            "env_leak": "Env Secret Leak",
+        }
+        script_label = label_map.get(req.simulation_type, req.simulation_type.replace("_", " ").title())
+    else:
+        sim_func = simulate_token_theft
 
     scan = models.ScanHistory(target_name=f"BAS Simulation: {namespace}/{pod_name} [{script_label}]")
     db.add(scan)
     db.commit()
     db.refresh(scan)
 
-    if script_content:
-        result = simulate_custom_script(pod_name, namespace, script_content)
-    else:
-        result = simulate_token_theft(pod_name, namespace)
+    result = sim_func(pod_name, namespace)
 
     if result["success"]:
         severity = result.get("severity", "CRITICAL")

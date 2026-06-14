@@ -84,4 +84,5 @@ class BasScriptSchema(BasScriptBase):
 # ── BAS simulate request ──────────────────────────────────────────────────────
 
 class BASSimulateRequest(BaseModel):
+    simulation_type: Optional[str] = None
     script_id: Optional[int] = None

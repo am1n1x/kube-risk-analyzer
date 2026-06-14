@@ -404,12 +404,20 @@
                                         placeholder="e.g. nginx-pod" />
                                 </div>
                                 <div class="form-control w-full mt-2">
-                                    <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Attack Script</span></label>
-                                    <select x-model="basScriptId" class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary">
-                                        <option value="">Default: Token Theft (built-in)</option>
-                                        <template x-for="s in scripts" :key="s.id">
-                                            <option :value="s.id" x-text="s.name"></option>
-                                        </template>
+                                    <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Attack Vector</span></label>
+                                    <select x-model="selectedSimType" class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary">
+                                        <optgroup label="Default Simulations">
+                                            <option value="token_theft">Token Theft (built-in)</option>
+                                            <option value="socket_escape">Socket Escape (built-in)</option>
+                                            <option value="host_filesystem">Host Filesystem Access (built-in)</option>
+                                            <option value="privilege_recon">Privilege Recon (built-in)</option>
+                                            <option value="env_leak">Env Secret Leak (built-in)</option>
+                                        </optgroup>
+                                        <optgroup label="Custom Scripts">
+                                            <template x-for="s in scripts" :key="s.id">
+                                                <option :value="'script:' + s.id" x-text="s.name"></option>
+                                            </template>
+                                        </optgroup>
                                     </select>
                                 </div>
                                 <div class="mt-5">
@@ -1004,6 +1012,7 @@
                 // ── BAS form ───────────────────────────────────────────────
                 basPodName: '',
                 basNamespace: 'default',
+                selectedSimType: 'token_theft',
                 basScriptId: '',
                 basResult: null,
 
@@ -1445,7 +1454,13 @@
                     this.loading = true;
                     this.basResult = null;
                     try {
-                        const body = { script_id: this.basScriptId ? parseInt(this.basScriptId) : null };
+                        let body = {};
+                        if (this.selectedSimType && this.selectedSimType.startsWith('script:')) {
+                            const scriptId = parseInt(this.selectedSimType.split(':')[1]);
+                            body = { script_id: scriptId };
+                        } else {
+                            body = { simulation_type: this.selectedSimType || 'token_theft' };
+                        }
                         const res = await fetch(`/bas/simulate/${this.basNamespace}/${this.basPodName}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
