@@ -46,10 +46,6 @@
                             <div class="stat-value text-base-content" x-text="rules.length"></div>
                         </div>
                     </div>
-                    <div class="bg-base-100 p-6 border border-base-300 rounded-sm w-full md:w-2/3">
-                        <h3 class="text-base font-bold mb-4 text-base-content/80 font-mono uppercase tracking-wider">Rules by Category</h3>
-                        <div class="relative w-full h-[22rem]"><canvas id="categoryChart"></canvas></div>
-                    </div>
                 </div>
 
                 <!-- Tab 2: Control Panel -->
@@ -122,7 +118,7 @@
                                 <template x-for="scan in scans" :key="scan.id">
                                     <tr class="hover:bg-base-300/50 border-b border-base-300">
                                         <th class="text-base-content/70 font-mono text-xs" x-text="scan.id"></th>
-                                        <td class="text-base-content/70 font-mono text-xs" x-text="new Date(scan.scan_date).toLocaleString()"></td>
+                                        <td class="text-base-content/70 font-mono text-xs" x-text="new Date(scan.scan_date.endsWith('Z') ? scan.scan_date : scan.scan_date + 'Z').toLocaleString()"></td>
                                         <td>
                                             <span x-text="scan.target_name" class="inline-block mr-2 text-base-content font-mono text-xs"></span>
                                             <span x-show="scan.target_name.includes('BAS Simulation')" class="badge badge-sm badge-error rounded-sm">BAS</span>
@@ -147,26 +143,85 @@
                             <h3 class="text-base font-mono text-base-content uppercase tracking-wider">Findings — Scan #<span x-text="viewingScan"></span></h3>
                             <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="viewingScan = null">Back</button>
                         </div>
+
+                        <!-- Filter bar -->
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <button class="btn btn-xs rounded-sm font-mono uppercase tracking-wider border"
+                                :class="findingFilter === null ? 'bg-base-300 text-base-content border-base-content/30' : 'btn-ghost border-base-300 text-base-content/50'"
+                                @click="findingFilter = null">
+                                All <span class="ml-1 badge badge-xs rounded-sm" x-text="selectedScanFindings.length"></span>
+                            </button>
+                            <template x-for="[sev, cls] in [['CRITICAL','badge-error'],['HIGH','badge-warning'],['MEDIUM','badge-info'],['LOW','badge-ghost']]" :key="sev">
+                                <button class="btn btn-xs rounded-sm font-mono uppercase tracking-wider border"
+                                    :class="findingFilter === sev ? 'bg-base-300 border-base-content/30 text-base-content' : 'btn-ghost border-base-300 text-base-content/50'"
+                                    x-show="sevCount(sev) > 0"
+                                    @click="findingFilter = findingFilter === sev ? null : sev">
+                                    <span class="badge badge-xs rounded-sm" :class="cls" x-text="sev"></span>
+                                    <span class="ml-1" x-text="sevCount(sev)"></span>
+                                </button>
+                            </template>
+                        </div>
+
                         <div class="overflow-x-auto">
                             <table class="table table-xs">
                                 <thead>
                                     <tr class="text-base-content/70 text-xs font-mono uppercase tracking-wider">
+                                        <th>
+                                            <button class="flex items-center gap-1 hover:text-base-content transition-colors"
+                                                @click="findingSortDir = findingSortDir === 'asc' ? 'desc' : 'asc'">
+                                                Severity
+                                                <span class="text-primary" x-text="findingSortDir === 'asc' ? '↑' : '↓'"></span>
+                                            </button>
+                                        </th>
                                         <th>Target Resource</th>
                                         <th>Risk Context</th>
                                         <th>Description</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template x-for="finding in selectedScanFindings" :key="finding.id">
+                                    <template x-for="finding in filteredFindings" :key="finding.id">
                                         <tr class="hover:bg-base-300/50 border-b border-base-300"
-                                            :class="finding.risk_description.includes('CRITICAL') ? 'bg-error/10 border-l-4 border-error' : ''">
-                                            <td class="font-mono text-xs text-base-content break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-error-content' : ''" x-text="finding.subject"></td>
-                                            <td class="font-mono text-xs break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-error/80' : 'text-base-content/70'" x-text="finding.role"></td>
-                                            <td class="text-xs font-mono break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-error-content font-bold' : 'text-base-content/70'" x-text="finding.risk_description"></td>
+                                            :class="{
+                                                'bg-error/10 border-l-4 border-error': finding.severity === 'CRITICAL',
+                                                'bg-warning/5 border-l-4 border-warning': finding.severity === 'HIGH',
+                                                'border-l-4 border-info/40': finding.severity === 'MEDIUM'
+                                            }">
+                                            <td class="font-mono text-xs whitespace-nowrap">
+                                                <span class="badge badge-sm rounded-sm font-bold uppercase tracking-wider"
+                                                    :class="{
+                                                        'badge-error': finding.severity === 'CRITICAL',
+                                                        'badge-warning': finding.severity === 'HIGH',
+                                                        'badge-info': finding.severity === 'MEDIUM',
+                                                        'badge-ghost': finding.severity === 'LOW'
+                                                    }"
+                                                    x-text="finding.severity || 'MEDIUM'"></span>
+                                            </td>
+                                            <td class="font-mono text-xs break-words whitespace-normal"
+                                                :class="{
+                                                    'text-error font-semibold': finding.severity === 'CRITICAL',
+                                                    'text-warning font-semibold': finding.severity === 'HIGH',
+                                                    'text-base-content': finding.severity === 'MEDIUM' || finding.severity === 'LOW'
+                                                }"
+                                                x-text="finding.subject"></td>
+                                            <td class="font-mono text-xs break-words whitespace-normal"
+                                                :class="{
+                                                    'text-error/80': finding.severity === 'CRITICAL',
+                                                    'text-warning/80': finding.severity === 'HIGH',
+                                                    'text-base-content/80': finding.severity === 'MEDIUM' || finding.severity === 'LOW'
+                                                }"
+                                                x-text="finding.role"></td>
+                                            <td class="text-xs font-mono break-words whitespace-normal"
+                                                :class="{
+                                                    'text-error font-semibold': finding.severity === 'CRITICAL',
+                                                    'text-warning': finding.severity === 'HIGH',
+                                                    'text-base-content/90': finding.severity === 'MEDIUM' || finding.severity === 'LOW'
+                                                }"
+                                                x-text="finding.risk_description"></td>
                                         </tr>
                                     </template>
-                                    <tr x-show="selectedScanFindings.length === 0">
-                                        <td colspan="3" class="text-center py-6 text-base-content/60 font-mono text-xs">No findings in this scan.</td>
+                                    <tr x-show="filteredFindings.length === 0">
+                                        <td colspan="4" class="text-center py-6 text-base-content/60 font-mono text-xs"
+                                            x-text="selectedScanFindings.length === 0 ? 'No findings in this scan.' : 'No findings match the selected filter.'"></td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -179,8 +234,14 @@
                     <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Threat Knowledge Base</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <template x-for="rule in rules" :key="rule.description">
-                            <div class="bg-base-100 border border-base-300 rounded-sm p-4">
-                                <div class="flex justify-between items-start">
+                            <div class="bg-base-100 border rounded-sm p-4"
+                                :class="{
+                                    'border-error/50': rule.severity === 'CRITICAL',
+                                    'border-warning/40': rule.severity === 'HIGH',
+                                    'border-info/30': rule.severity === 'MEDIUM',
+                                    'border-base-300': rule.severity === 'LOW' || !rule.severity
+                                }">
+                                <div class="flex justify-between items-start gap-2">
                                     <span class="badge badge-sm rounded-sm font-mono uppercase tracking-wider"
                                         :class="{
                                             'badge-secondary': rule.category === 'rbac',
@@ -188,6 +249,14 @@
                                             'badge-info': rule.category === 'network'
                                         }"
                                         x-text="rule.category"></span>
+                                    <span class="badge badge-sm rounded-sm font-bold uppercase tracking-wider"
+                                        :class="{
+                                            'badge-error': rule.severity === 'CRITICAL',
+                                            'badge-warning': rule.severity === 'HIGH',
+                                            'badge-info': rule.severity === 'MEDIUM',
+                                            'badge-ghost': rule.severity === 'LOW' || !rule.severity
+                                        }"
+                                        x-text="rule.severity || 'MEDIUM'"></span>
                                 </div>
                                 <h3 class="mt-3 text-base font-mono text-base-content leading-snug" x-text="rule.description"></h3>
                                 <div class="mt-3 text-sm font-mono text-base-content/60" x-show="rule.dangerous_rules">
@@ -205,7 +274,7 @@
 
         <div class="drawer-side">
             <label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
-            <ul :class="sidebarExpanded ? 'w-72' : 'w-20'" class="flex flex-col p-0 min-h-full bg-base-200 text-base-content/70 border-r border-base-300 transition-all duration-300">
+            <ul :class="sidebarExpanded ? 'w-72' : 'w-20'" class="flex flex-col p-0 min-h-full bg-base-200 text-base-content/70 border-r border-base-300">
 
                 <li class="border-b border-base-300">
                     <button @click="sidebarExpanded = !sidebarExpanded" class="flex items-center justify-center w-full px-3 py-3 text-base-content/60 hover:text-base-content hover:bg-base-300/50 rounded-none cursor-pointer">
@@ -259,13 +328,29 @@
                 rules: [],
                 selectedScanFindings: [],
                 viewingScan: null,
+                findingFilter: null,
+                findingSortDir: 'asc',
                 basPodName: '',
                 basNamespace: 'default',
                 basResult: null,
                 loading: false,
                 sidebarExpanded: true,
                 theme: localStorage.getItem('kra-theme') || 'dark',
-                chartInstance: null,
+
+                get filteredFindings() {
+                    const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                    const list = this.findingFilter
+                        ? this.selectedScanFindings.filter(f => f.severity === this.findingFilter)
+                        : this.selectedScanFindings;
+                    return [...list].sort((a, b) => {
+                        const diff = (SEV_ORDER[a.severity] ?? 2) - (SEV_ORDER[b.severity] ?? 2);
+                        return this.findingSortDir === 'asc' ? diff : -diff;
+                    });
+                },
+
+                sevCount(sev) {
+                    return this.selectedScanFindings.filter(f => f.severity === sev).length;
+                },
 
                 toggleTheme() {
                     this.theme = this.theme === 'dark' ? 'light' : 'dark';
@@ -275,20 +360,10 @@
                 async init() {
                     await this.fetchData();
 
-                    this.$watch('activeTab', (value) => {
-                        if (value === 'dashboard') {
-                            this.$nextTick(() => {
-                                requestAnimationFrame(() => this.renderChart());
-                            });
-                        }
+                    this.$watch('activeTab', (value, oldValue) => {
                     });
 
                     this.$watch('sidebarExpanded', () => {
-                        if (this.activeTab === 'dashboard') {
-                            this.$nextTick(() => {
-                                requestAnimationFrame(() => this.renderChart());
-                            });
-                        }
                     });
                 },
 
@@ -300,11 +375,6 @@
                         ]);
                         this.scans = await scansRes.json();
                         this.rules = await rulesRes.json();
-                        if (this.activeTab === 'dashboard') {
-                            this.$nextTick(() => {
-                                requestAnimationFrame(() => this.renderChart());
-                            });
-                        }
                     } catch (e) {
                         console.error('Failed to fetch data', e);
                     }
@@ -357,62 +427,13 @@
                         const res = await fetch(`/scans/${scanId}`);
                         this.selectedScanFindings = await res.json();
                         this.viewingScan = scanId;
+                        this.findingFilter = null;
+                        this.findingSortDir = 'asc';
                     } catch(e) {
                         console.error(e);
                     }
                 },
 
-                renderChart() {
-                    const canvas = document.getElementById('categoryChart');
-                    if(!canvas) return;
-
-                    if (canvas.parentElement.clientWidth === 0 || canvas.parentElement.clientHeight === 0) {
-                        requestAnimationFrame(() => this.renderChart());
-                        return;
-                    }
-
-                    const counts = { rbac: 0, workload: 0, network: 0 };
-                    this.rules.forEach(r => {
-                        if(counts[r.category] !== undefined) counts[r.category]++;
-                        else counts[r.category] = 1;
-                    });
-
-                    if (this.chartInstance) {
-                        this.chartInstance.destroy();
-                    }
-
-                    this.chartInstance = new Chart(canvas, {
-                        type: 'bar',
-                        data: {
-                            labels: Object.keys(counts).map(k => k.toUpperCase()),
-                            datasets: [{
-                                label: '# of Configured Rules',
-                                data: Object.values(counts),
-                                backgroundColor: [
-                                    'rgba(255, 99, 132, 0.5)',
-                                    'rgba(54, 162, 235, 0.5)',
-                                    'rgba(255, 206, 86, 0.5)'
-                                ],
-                                borderColor: [
-                                    'rgba(255, 99, 132, 1)',
-                                    'rgba(54, 162, 235, 1)',
-                                    'rgba(255, 206, 86, 1)'
-                                ],
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: { precision: 0 }
-                                }
-                            }
-                        }
-                    });
-                }
             }));
         });
     </script>

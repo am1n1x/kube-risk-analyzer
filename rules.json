@@ -2,6 +2,7 @@
     {
         "id": "DANGER-001",
         "category": "rbac",
+        "severity": "HIGH",
         "description": "Чтение секретов (паролей, токенов)",
         "dangerous_verbs": ["get", "list", "watch"],
         "dangerous_resources": ["secrets"]
@@ -9,6 +10,7 @@
     {
         "id": "DANGER-002",
         "category": "rbac",
+        "severity": "CRITICAL",
         "description": "Полный административный доступ (*)",
         "dangerous_verbs": ["*"],
         "dangerous_resources": ["*"]
@@ -16,6 +18,7 @@
     {
         "id": "DANGER-003",
         "category": "rbac",
+        "severity": "CRITICAL",
         "description": "Создание подов (риск RCE)",
         "dangerous_verbs": ["create"],
         "dangerous_resources": ["pods"]
@@ -23,6 +26,7 @@
     {
         "id": "DANGER-004",
         "category": "rbac",
+        "severity": "CRITICAL",
         "description": "Право на выполнение команд внутри пода (exec)",
         "dangerous_verbs": ["create"],
         "dangerous_resources": ["pods/exec"]
@@ -30,6 +34,7 @@
     {
         "id": "DANGER-005",
         "category": "rbac",
+        "severity": "LOW",
         "description": "Доступ к логам подов",
         "dangerous_verbs": ["get", "list", "watch"],
         "dangerous_resources": ["pods/log"]
@@ -37,6 +42,7 @@
     {
         "id": "DANGER-006",
         "category": "rbac",
+        "severity": "CRITICAL",
         "description": "Право на изменение прав (escalate/bind)",
         "dangerous_verbs": ["bind", "escalate"],
         "dangerous_resources": ["roles", "clusterroles"]
@@ -44,6 +50,7 @@
     {
         "id": "DANGER-007",
         "category": "rbac",
+        "severity": "HIGH",
         "description": "Доступ к управлению узлами (nodes)",
         "dangerous_verbs": ["create", "update", "patch", "delete", "get", "list", "watch"],
         "dangerous_resources": ["nodes"]
@@ -51,6 +58,7 @@
     {
         "id": "DANGER-008",
         "category": "workload",
+        "severity": "CRITICAL",
         "description": "Контейнер в привилегированном режиме (Privileged)",
         "key": "spec.containers.securityContext.privileged",
         "dangerous_verbs": [],
@@ -59,6 +67,7 @@
     {
         "id": "DANGER-009",
         "category": "workload",
+        "severity": "HIGH",
         "description": "Использование хостовой сети (HostNetwork)",
         "key": "spec.hostNetwork",
         "dangerous_verbs": [],
@@ -67,6 +76,7 @@
     {
         "id": "DANGER-010",
         "category": "workload",
+        "severity": "HIGH",
         "description": "Монтирование хостовой директории (hostPath)",
         "key": "spec.volumes.hostPath",
         "dangerous_verbs": [],
@@ -75,6 +85,7 @@
     {
         "id": "DANGER-011",
         "category": "network",
+        "severity": "MEDIUM",
         "description": "Сервис открыт наружу через NodePort (риск прямого доступа к портам узла)",
         "dangerous_verbs": [],
         "dangerous_resources": ["services"]
@@ -82,6 +93,7 @@
     {
         "id": "DANGER-012",
         "category": "network",
+        "severity": "MEDIUM",
         "description": "Сервис открыт наружу через LoadBalancer (публичный IP)",
         "dangerous_verbs": [],
         "dangerous_resources": ["services"]
@@ -89,6 +101,7 @@
     {
         "id": "DANGER-013",
         "category": "network",
+        "severity": "CRITICAL",
         "description": "КРИТИЧЕСКАЯ УГРОЗА: База данных выставлена в интернет",
         "dangerous_verbs": [],
         "dangerous_resources": ["services"]

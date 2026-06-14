@@ -12,6 +12,7 @@ class RiskRule(Base):
     dangerous_resources = Column(String, nullable=True)
     category = Column(String, default="rbac")
     key = Column(String, nullable=True)
+    severity = Column(String, default="MEDIUM")
 
 
 class ScanHistory(Base):
@@ -32,5 +33,6 @@ class Finding(Base):
     subject = Column(String)
     role = Column(String)
     risk_description = Column(String)
+    severity = Column(String, default="MEDIUM")
 
     scan = relationship("ScanHistory", back_populates="findings")

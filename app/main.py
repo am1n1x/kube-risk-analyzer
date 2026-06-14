@@ -16,6 +16,12 @@ models.Base.metadata.create_all(bind=engine)
 
 templates = Jinja2Templates(directory="templates")
 
+_SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+def _severity_key(finding):
+    return _SEVERITY_ORDER.get(getattr(finding, "severity", "MEDIUM"), 2)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = SessionLocal()
@@ -92,7 +98,8 @@ def scan_offline(db: Session = Depends(get_db)):
             scan_id=scan.id,
             subject=finding_data["subject"],
             role=finding_data["role"],
-            risk_description=finding_data["risk_description"]
+            risk_description=finding_data["risk_description"],
+            severity=finding_data.get("severity", "MEDIUM"),
         )
         db.add(finding)
 
@@ -108,22 +115,26 @@ def scan_offline(db: Session = Depends(get_db)):
         workload_dangers = analyze_pod_workload(pod, workload_rules)
         sa_rbac_dangers = get_sa_rbac_dangers(sa_name, pod_ns, bindings, roles, cluster_roles, rbac_rules)
 
-        for danger in workload_dangers:
+        for danger_desc, danger_sev in workload_dangers:
             finding = models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=images,
-                risk_description=danger
+                risk_description=danger_desc,
+                severity=danger_sev,
             )
             db.add(finding)
             findings_count += 1
 
         if workload_dangers and sa_rbac_dangers:
+            w_descs = ", ".join(d for d, _ in workload_dangers)
+            r_descs = ", ".join(d for d, _ in sa_rbac_dangers)
             correlated = models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=f"SA:{sa_name} | images: {images}",
-                risk_description=f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(workload_dangers)}) and its ServiceAccount '{sa_name}' has dangerous RBAC rights ({', '.join(sa_rbac_dangers)})"
+                risk_description=f"CRITICAL CHAIN: Pod is vulnerable ({w_descs}) and its ServiceAccount '{sa_name}' has dangerous RBAC rights ({r_descs})",
+                severity="CRITICAL",
             )
             db.add(correlated)
             findings_count += 1
@@ -134,7 +145,8 @@ def scan_offline(db: Session = Depends(get_db)):
             scan_id=scan.id,
             subject=net_f["subject"],
             role=net_f["role"],
-            risk_description=net_f["risk_description"]
+            risk_description=net_f["risk_description"],
+            severity=net_f.get("severity", "MEDIUM"),
         )
         db.add(finding)
         findings_count += 1
@@ -185,7 +197,8 @@ def scan_live(db: Session = Depends(get_db)):
             scan_id=scan.id,
             subject=finding_data["subject"],
             role=finding_data["role"],
-            risk_description=finding_data["risk_description"]
+            risk_description=finding_data["risk_description"],
+            severity=finding_data.get("severity", "MEDIUM"),
         )
         db.add(finding)
 
@@ -201,22 +214,26 @@ def scan_live(db: Session = Depends(get_db)):
         workload_dangers = analyze_pod_workload(pod, workload_rules)
         sa_rbac_dangers = get_sa_rbac_dangers(sa_name, pod_ns, bindings, roles, cluster_roles, rbac_rules)
 
-        for danger in workload_dangers:
+        for danger_desc, danger_sev in workload_dangers:
             finding = models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=images,
-                risk_description=danger
+                risk_description=danger_desc,
+                severity=danger_sev,
             )
             db.add(finding)
             findings_count += 1
 
         if workload_dangers and sa_rbac_dangers:
+            w_descs = ", ".join(d for d, _ in workload_dangers)
+            r_descs = ", ".join(d for d, _ in sa_rbac_dangers)
             correlated = models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=f"SA:{sa_name} | images: {images}",
-                risk_description=f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(workload_dangers)}) and its ServiceAccount '{sa_name}' has dangerous RBAC rights ({', '.join(sa_rbac_dangers)})"
+                risk_description=f"CRITICAL CHAIN: Pod is vulnerable ({w_descs}) and its ServiceAccount '{sa_name}' has dangerous RBAC rights ({r_descs})",
+                severity="CRITICAL",
             )
             db.add(correlated)
             findings_count += 1
@@ -227,7 +244,8 @@ def scan_live(db: Session = Depends(get_db)):
             scan_id=scan.id,
             subject=net_f["subject"],
             role=net_f["role"],
-            risk_description=net_f["risk_description"]
+            risk_description=net_f["risk_description"],
+            severity=net_f.get("severity", "MEDIUM"),
         )
         db.add(finding)
         findings_count += 1
@@ -240,7 +258,7 @@ def scan_live(db: Session = Depends(get_db)):
 @app.get("/scans/{scan_id}", response_model=list[schemas.FindingSchema])
 def get_scan(scan_id: int, db: Session = Depends(get_db)):
     findings = db.query(models.Finding).filter(models.Finding.scan_id == scan_id).all()
-    return findings
+    return sorted(findings, key=_severity_key)
 
 @app.get("/scans", response_model=list[schemas.ScanHistorySchema])
 def get_scans(db: Session = Depends(get_db)):
@@ -259,14 +277,17 @@ def simulate_bas(namespace: str, pod_name: str, db: Session = Depends(get_db)):
 
     if result["success"]:
         risk_desc = f"🚨 SUCCESS (CRITICAL): {result['details']}"
+        severity = "CRITICAL"
     else:
         risk_desc = f"✅ BLOCKED: {result['details']}"
+        severity = "LOW"
 
     finding = models.Finding(
         scan_id=scan.id,
         subject=f"Pod: {pod_name} (Active Exploit)",
         role=f"Namespace: {namespace}",
         risk_description=risk_desc,
+        severity=severity,
     )
     db.add(finding)
     db.commit()

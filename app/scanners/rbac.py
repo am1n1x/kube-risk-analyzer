@@ -1,4 +1,5 @@
-def evaluate_rbac_rule(role_verbs: list[str], role_resources: list[str], db_rules) -> list[str]:
+def evaluate_rbac_rule(role_verbs: list[str], role_resources: list[str], db_rules) -> list[tuple]:
+    """Returns list of (description, severity) tuples for matched rules."""
     findings = []
 
     role_verbs_set = set(role_verbs)
@@ -29,7 +30,7 @@ def evaluate_rbac_rule(role_verbs: list[str], role_resources: list[str], db_rule
             resources_match = True
 
         if verbs_match and resources_match:
-            findings.append(rule.description)
+            findings.append((rule.description, getattr(rule, "severity", "MEDIUM")))
 
     return findings
 
@@ -42,7 +43,6 @@ def analyze_rbac_bindings(bindings: list[dict], roles: dict, cluster_roles: dict
         kind = role_ref.get("kind")
         name = role_ref.get("name")
 
-        # namespace for Role, can be empty string/None for ClusterRoleBinding
         namespace = binding.get("metadata", {}).get("namespace", "default")
 
         target_role = None
@@ -60,7 +60,7 @@ def analyze_rbac_bindings(bindings: list[dict], roles: dict, cluster_roles: dict
 
             dangers = evaluate_rbac_rule(role_verbs, role_resources, db_rbac_rules)
 
-            for danger in dangers:
+            for description, severity in dangers:
                 subjects = binding.get("subjects") or []
                 for subject in subjects:
                     subject_str = f"{subject.get('kind', 'Unknown')}:{subject.get('name', 'Unknown')}"
@@ -69,7 +69,8 @@ def analyze_rbac_bindings(bindings: list[dict], roles: dict, cluster_roles: dict
                     finding = {
                         "subject": subject_str,
                         "role": role_str,
-                        "risk_description": danger
+                        "risk_description": description,
+                        "severity": severity,
                     }
                     if finding not in all_findings:
                         all_findings.append(finding)
@@ -77,8 +78,10 @@ def analyze_rbac_bindings(bindings: list[dict], roles: dict, cluster_roles: dict
     return all_findings
 
 
-def get_sa_rbac_dangers(sa_name: str, namespace: str, bindings: list[dict], roles: dict, cluster_roles: dict, db_rules) -> list[str]:
+def get_sa_rbac_dangers(sa_name: str, namespace: str, bindings: list[dict], roles: dict, cluster_roles: dict, db_rules) -> list[tuple]:
+    """Returns list of (description, severity) tuples for the given ServiceAccount."""
     dangers_found = []
+    seen = set()
 
     for binding in bindings:
         subjects = binding.get("subjects") or []
@@ -102,8 +105,9 @@ def get_sa_rbac_dangers(sa_name: str, namespace: str, bindings: list[dict], role
                         role_verbs = rule.get("verbs", [])
                         role_resources = rule.get("resources", [])
                         dangers = evaluate_rbac_rule(role_verbs, role_resources, db_rules)
-                        for d in dangers:
-                            if d not in dangers_found:
-                                dangers_found.append(d)
+                        for d, sev in dangers:
+                            if d not in seen:
+                                seen.add(d)
+                                dangers_found.append((d, sev))
 
     return dangers_found

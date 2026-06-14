@@ -8,6 +8,7 @@ class RiskRuleBase(BaseModel):
     dangerous_resources: Optional[str] = None
     category: str = "rbac"
     key: Optional[str] = None
+    severity: str = "MEDIUM"
 
 class RiskRuleCreate(RiskRuleBase):
     pass
@@ -21,6 +22,7 @@ class FindingBase(BaseModel):
     subject: str
     role: str
     risk_description: str
+    severity: str = "MEDIUM"
 
 class FindingCreate(FindingBase):
     pass
