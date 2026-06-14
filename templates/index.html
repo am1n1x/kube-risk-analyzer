@@ -944,12 +944,13 @@
                         pods = this.clusterPods.map(pod => {
                             const pf = findings.filter(f =>
                                 f.subject === `Pod: ${pod.name}` ||
-                                f.subject.startsWith(`Pod: ${pod.name} `)
+                                f.subject.startsWith(`Pod: ${pod.name} `) ||
+                                (pod.sa && f.subject === `ServiceAccount:${pod.sa}`)
                             );
                             const maxSev = pf.reduce((best, f) =>
                                 best === null || (SEV_ORDER[f.severity] ?? 2) < (SEV_ORDER[best] ?? 2) ? f.severity : best
                             , null);
-                            return { name: pod.name, namespace: pod.namespace, phase: pod.phase || 'Unknown', node: pod.node || '', findingsCount: pf.length, maxSeverity: maxSev };
+                            return { name: pod.name, namespace: pod.namespace, phase: pod.phase || 'Unknown', node: pod.node || '', sa: pod.sa || '', findingsCount: pf.length, maxSeverity: maxSev };
                         });
                     } else {
                         const podMap = {};

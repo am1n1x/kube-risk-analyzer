@@ -99,6 +99,7 @@ def get_cluster_pod_list():
                 "namespace": meta.get("namespace", "default"),
                 "phase": _pod_display_status(status),
                 "node": spec.get("nodeName", ""),
+                "sa": spec.get("serviceAccountName", "default"),
             })
         return {"pods": pods, "source": "live"}
     except Exception as e:
