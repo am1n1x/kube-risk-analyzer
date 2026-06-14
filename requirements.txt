@@ -5,3 +5,4 @@ pydantic
 pyyaml
 kubernetes
 jinja2
+alembic

@@ -10,15 +10,13 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
 from . import models, schemas
-from .database import engine, SessionLocal, get_db
+from .database import SessionLocal, get_db
 from .rules import sync_rules_to_db
 from .scanners.rbac import analyze_rbac_bindings, get_sa_rbac_dangers
 from .scanners.workload import analyze_pod_workload
 from .scanners.network import analyze_services
 from .k8s_client import get_live_k8s_data
 from .bas import simulate_custom_script
-
-models.Base.metadata.create_all(bind=engine)
 
 templates = Jinja2Templates(directory="templates")
 
