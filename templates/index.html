@@ -50,26 +50,57 @@
 
                     <!-- Pods & Workloads -->
                     <div class="mb-6">
-                        <div class="flex items-center gap-3 mb-3">
+                        <div class="flex flex-wrap items-center gap-3 mb-3">
                             <h3 class="text-base font-bold text-base-content font-mono uppercase tracking-wider">Pods &amp; Workloads</h3>
                             <span x-show="clusterPodsSource === 'loading'" class="loading loading-spinner loading-xs text-primary"></span>
                             <span x-show="clusterPodsSource === 'live'" class="badge badge-sm rounded-sm badge-success font-mono uppercase tracking-wider">● Live Cluster</span>
                             <span x-show="clusterPodsSource === 'unavailable'" class="badge badge-sm rounded-sm badge-warning font-mono uppercase tracking-wider">○ From Last Scan</span>
+                            <div class="ml-auto flex items-center gap-2">
+                                <span class="text-xs font-mono text-base-content/50 uppercase tracking-wider">Per-pod latest</span>
+                                <input type="checkbox" class="toggle toggle-sm toggle-primary" x-model="podViewAllScans" />
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 mb-2 p-2 bg-base-200 border border-base-300 rounded-sm">
+                            <input type="text" x-model="dashPodSearch" placeholder="Search pod or namespace..."
+                                class="input input-bordered input-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono w-48" />
+                            <select x-model="dashPodNsFilter" class="select select-bordered select-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono">
+                                <option value="">All namespaces</option>
+                                <template x-for="ns in basNamespaces" :key="ns"><option :value="ns" x-text="ns"></option></template>
+                            </select>
+                            <select x-model="dashPodSevFilter" class="select select-bordered select-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono">
+                                <option value="">All severities</option>
+                                <option value="CRITICAL">Critical</option>
+                                <option value="HIGH">High</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="LOW">Low</option>
+                            </select>
+                            <span class="ml-auto text-xs font-mono text-base-content/40" x-text="`${filteredDashPods.length} / ${dashPods.length} pods`"></span>
                         </div>
                         <div class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
                             <table class="table table-sm w-full">
                                 <thead>
                                     <tr class="bg-base-200 border-b border-base-300 text-base-content/60">
-                                        <th class="font-mono text-xs uppercase tracking-wider">Pod</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider">Namespace</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-28" x-show="clusterPodsSource === 'live'">Status</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider cursor-pointer select-none hover:text-base-content" @click="dashPodSortBy('name')">
+                                            <span class="flex items-center gap-1">Pod <span class="text-base-content/30" x-text="dashPodSortCol==='name'?(dashPodSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="font-mono text-xs uppercase tracking-wider cursor-pointer select-none hover:text-base-content" @click="dashPodSortBy('namespace')">
+                                            <span class="flex items-center gap-1">Namespace <span class="text-base-content/30" x-text="dashPodSortCol==='namespace'?(dashPodSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-28 cursor-pointer select-none hover:text-base-content" x-show="clusterPodsSource === 'live'" @click="dashPodSortBy('phase')">
+                                            <span class="flex items-center justify-center gap-1">Status <span class="text-base-content/30" x-text="dashPodSortCol==='phase'?(dashPodSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
                                         <th class="font-mono text-xs uppercase tracking-wider text-center w-28" x-show="clusterPodsSource === 'live'">Node</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-24">Findings</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-28">Max Severity</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-24 cursor-pointer select-none hover:text-base-content" @click="dashPodSortBy('findings')">
+                                            <span class="flex items-center justify-center gap-1">Findings <span class="text-base-content/30" x-text="dashPodSortCol==='findings'?(dashPodSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-28 cursor-pointer select-none hover:text-base-content" @click="dashPodSortBy('severity')">
+                                            <span class="flex items-center justify-center gap-1">Max Sev <span class="text-base-content/30" x-text="dashPodSortCol==='severity'?(dashPodSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="w-8"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template x-for="pod in dashPods" :key="pod.name + '/' + pod.namespace">
+                                    <template x-for="pod in filteredDashPods" :key="pod.name + '/' + pod.namespace">
                                         <tr class="hover:bg-base-300/30 border-b border-base-300"
                                             :class="{
                                                 'bg-error/10 border-l-4 border-error': pod.maxSeverity === 'CRITICAL',
@@ -105,10 +136,14 @@
                                                     x-text="pod.maxSeverity"></span>
                                                 <span x-show="!pod.maxSeverity" class="font-mono text-xs text-base-content/25">—</span>
                                             </td>
+                                            <td class="text-center">
+                                                <button x-show="pod.lastScanId" @click="goToScan(pod.lastScanId)"
+                                                    class="btn btn-ghost rounded-sm text-primary/70 hover:text-primary text-2xl font-black leading-none" title="View last scan">→</button>
+                                            </td>
                                         </tr>
                                     </template>
-                                    <tr x-show="dashPods.length === 0 && clusterPodsSource !== 'loading'">
-                                        <td colspan="6" class="text-center py-6 text-base-content/40 font-mono text-xs">No pod data available. Run a scan first.</td>
+                                    <tr x-show="filteredDashPods.length === 0 && clusterPodsSource !== 'loading'">
+                                        <td colspan="7" class="text-center py-6 text-base-content/40 font-mono text-xs">No pod data available. Run a scan first.</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -118,19 +153,35 @@
                     <!-- Scan Targets -->
                     <div>
                         <h3 class="text-base font-bold text-base-content font-mono uppercase tracking-wider mb-3">Scan Targets</h3>
+                        <div class="flex flex-wrap items-center gap-2 mb-2 p-2 bg-base-200 border border-base-300 rounded-sm">
+                            <input type="text" x-model="dashTargetSearch" placeholder="Search target..."
+                                class="input input-bordered input-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono w-52" />
+                            <span class="ml-auto text-xs font-mono text-base-content/40" x-text="`${filteredDashTargets.length} / ${dashTargets.length} targets`"></span>
+                        </div>
                         <div class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
                             <table class="table table-sm w-full">
                                 <thead>
                                     <tr class="bg-base-200 border-b border-base-300 text-base-content/60">
-                                        <th class="font-mono text-xs uppercase tracking-wider">Target</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-44">Last Scan</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-24">Findings</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-20">Critical</th>
-                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-20">High</th>
+                                        <th class="font-mono text-xs uppercase tracking-wider cursor-pointer select-none hover:text-base-content" @click="dashTargetSortBy('target')">
+                                            <span class="flex items-center gap-1">Target <span class="text-base-content/30" x-text="dashTargetSortCol==='target'?(dashTargetSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-44 cursor-pointer select-none hover:text-base-content" @click="dashTargetSortBy('date')">
+                                            <span class="flex items-center justify-center gap-1">Last Scan <span class="text-base-content/30" x-text="dashTargetSortCol==='date'?(dashTargetSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-24 cursor-pointer select-none hover:text-base-content" @click="dashTargetSortBy('total')">
+                                            <span class="flex items-center justify-center gap-1">Findings <span class="text-base-content/30" x-text="dashTargetSortCol==='total'?(dashTargetSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-20 cursor-pointer select-none hover:text-base-content" @click="dashTargetSortBy('critical')">
+                                            <span class="flex items-center justify-center gap-1">Critical <span class="text-base-content/30" x-text="dashTargetSortCol==='critical'?(dashTargetSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="font-mono text-xs uppercase tracking-wider text-center w-20 cursor-pointer select-none hover:text-base-content" @click="dashTargetSortBy('high')">
+                                            <span class="flex items-center justify-center gap-1">High <span class="text-base-content/30" x-text="dashTargetSortCol==='high'?(dashTargetSortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                        </th>
+                                        <th class="w-8"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template x-for="t in dashTargets" :key="t.scan_id">
+                                    <template x-for="t in filteredDashTargets" :key="t.scan_id">
                                         <tr class="hover:bg-base-300/30 border-b border-base-300"
                                             :class="{
                                                 'bg-error/10 border-l-4 border-error': t.critical > 0,
@@ -148,10 +199,14 @@
                                             <td class="text-center font-mono text-xs font-bold"
                                                 :class="t.high > 0 ? 'text-warning' : 'text-base-content/25'"
                                                 x-text="t.high"></td>
+                                            <td class="text-center">
+                                                <button @click="goToScan(t.scan_id)"
+                                                    class="btn btn-ghost rounded-sm text-primary/70 hover:text-primary text-2xl font-black leading-none" title="View report">→</button>
+                                            </td>
                                         </tr>
                                     </template>
-                                    <tr x-show="dashTargets.length === 0">
-                                        <td colspan="5" class="text-center py-6 text-base-content/40 font-mono text-xs">No scan targets yet. Run a scan first.</td>
+                                    <tr x-show="filteredDashTargets.length === 0">
+                                        <td colspan="6" class="text-center py-6 text-base-content/40 font-mono text-xs">No scan targets yet. Run a scan first.</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -423,21 +478,47 @@
                     <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Scan History</h2>
 
                     <div x-show="!viewingScan" class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
+                        <!-- Filter bar -->
+                        <div class="flex flex-wrap items-center gap-2 p-2 bg-base-200 border-b border-base-300">
+                            <input type="text" x-model="historySearch" placeholder="Search target..."
+                                class="input input-bordered input-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono w-48" />
+                            <select x-model="historyModuleFilter" class="select select-bordered select-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono">
+                                <option value="">All modules</option>
+                                <option value="BAS">BAS</option>
+                                <option value="LIVE">LIVE</option>
+                                <option value="CSPM">CSPM</option>
+                            </select>
+                            <span class="ml-auto text-xs font-mono text-base-content/40" x-text="`${filteredScans.length} / ${scans.length} scans`"></span>
+                        </div>
                         <table class="table table-xs w-full">
                             <thead>
                                 <tr class="bg-base-200 border-b border-base-300 text-base-content/60 text-xs font-mono uppercase tracking-wider">
-                                    <th class="w-10">#</th>
-                                    <th class="w-36">Date</th>
-                                    <th class="w-20 text-center">Module</th>
-                                    <th>Target</th>
-                                    <th class="w-16 text-center">Critical</th>
-                                    <th class="w-16 text-center">High</th>
-                                    <th class="w-16 text-center">Total</th>
+                                    <th class="w-10 cursor-pointer select-none hover:text-base-content" @click="historySortBy('id')">
+                                        <span class="flex items-center gap-1"># <span class="text-base-content/30" x-text="historySortCol==='id'?(historySortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                    </th>
+                                    <th class="w-36 cursor-pointer select-none hover:text-base-content" @click="historySortBy('date')">
+                                        <span class="flex items-center gap-1">Date <span class="text-base-content/30" x-text="historySortCol==='date'?(historySortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                    </th>
+                                    <th class="w-20 text-center cursor-pointer select-none hover:text-base-content" @click="historySortBy('module')">
+                                        <span class="flex items-center justify-center gap-1">Module <span class="text-base-content/30" x-text="historySortCol==='module'?(historySortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                    </th>
+                                    <th class="cursor-pointer select-none hover:text-base-content" @click="historySortBy('target')">
+                                        <span class="flex items-center gap-1">Target <span class="text-base-content/30" x-text="historySortCol==='target'?(historySortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                    </th>
+                                    <th class="w-16 text-center cursor-pointer select-none hover:text-base-content" @click="historySortBy('critical')">
+                                        <span class="flex items-center justify-center gap-1">Critical <span class="text-base-content/30" x-text="historySortCol==='critical'?(historySortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                    </th>
+                                    <th class="w-16 text-center cursor-pointer select-none hover:text-base-content" @click="historySortBy('high')">
+                                        <span class="flex items-center justify-center gap-1">High <span class="text-base-content/30" x-text="historySortCol==='high'?(historySortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                    </th>
+                                    <th class="w-16 text-center cursor-pointer select-none hover:text-base-content" @click="historySortBy('total')">
+                                        <span class="flex items-center justify-center gap-1">Total <span class="text-base-content/30" x-text="historySortCol==='total'?(historySortDir==='asc'?'↑':'↓'):'↕'"></span></span>
+                                    </th>
                                     <th class="w-24 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <template x-for="scan in scans" :key="scan.id">
+                                <template x-for="scan in filteredScans" :key="scan.id">
                                     <tr class="hover:bg-base-300/30 border-b border-base-300"
                                         :class="{
                                             'bg-error/10 border-l-4 border-error': scanMaxSev(scan.findings) === 'CRITICAL',
@@ -468,8 +549,9 @@
                                         </td>
                                     </tr>
                                 </template>
-                                <tr x-show="scans.length === 0">
-                                    <td colspan="8" class="text-center py-6 text-base-content/60 font-mono text-xs">No scans found.</td>
+                                <tr x-show="filteredScans.length === 0">
+                                    <td colspan="8" class="text-center py-6 text-base-content/60 font-mono text-xs"
+                                        x-text="scans.length === 0 ? 'No scans found.' : 'No scans match the current filters.'"></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -501,7 +583,10 @@
                         </div>
 
                         <!-- Filter bar -->
-                        <div class="flex flex-wrap gap-2 mb-4">
+                        <div class="flex flex-wrap items-center gap-2 mb-4">
+                            <input type="text" x-model="findingSearch" placeholder="Search findings..."
+                                class="input input-bordered input-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono w-52" />
+                            <div class="w-px h-5 bg-base-300"></div>
                             <button class="btn btn-xs rounded-sm font-mono uppercase tracking-wider border"
                                 :class="findingFilter === null ? 'bg-base-300 text-base-content border-base-content/30' : 'btn-ghost border-base-300 text-base-content/50'"
                                 @click="findingFilter = null">
@@ -516,6 +601,9 @@
                                     <span class="ml-1" x-text="sevCount(sev)"></span>
                                 </button>
                             </template>
+                            <span class="ml-auto text-xs font-mono text-base-content/40"
+                                x-show="findingSearch || findingFilter"
+                                x-text="`${filteredFindings.length} / ${selectedScanFindings.length}`"></span>
                         </div>
 
                         <div class="overflow-x-auto">
@@ -571,10 +659,10 @@
                     </div>
                 </div>
 
-                <!-- Tab 4: Threat Knowledge Base -->
+                <!-- Tab 4: Detection Rules -->
                 <div x-show="activeTab === 'kb'" x-transition.opacity x-cloak>
                     <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-lg font-bold text-base-content font-mono uppercase tracking-wider">Threat Knowledge Base</h2>
+                        <h2 class="text-lg font-bold text-base-content font-mono uppercase tracking-wider">Detection Rules</h2>
                         <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary font-mono" @click="openAddRule()">
                             + Add Rule
                         </button>
@@ -692,7 +780,7 @@
             <ul :class="sidebarExpanded ? 'w-72' : 'w-20'" class="flex flex-col p-0 min-h-full bg-base-200 text-base-content/70 border-r border-base-300">
 
                 <li class="border-b border-base-300">
-                    <button @click="sidebarExpanded = !sidebarExpanded" class="flex items-center justify-center w-full px-3 py-3 text-base-content/60 hover:text-base-content hover:bg-base-300/50 rounded-none cursor-pointer">
+                    <button @click="sidebarExpanded = !sidebarExpanded" :class="sidebarExpanded ? 'justify-end pr-3' : 'justify-center'" class="flex items-center w-full px-3 py-3 text-base-content/60 hover:text-base-content hover:bg-base-300/50 rounded-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 transition-transform duration-300" :class="sidebarExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
                         </svg>
@@ -706,19 +794,19 @@
                 </li>
 
                 <div class="flex-1">
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'dashboard' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'dashboard'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'dashboard' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'dashboard'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
                         <span x-show="sidebarExpanded">Dashboard</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'control' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'control'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'control' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'control'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         <span x-show="sidebarExpanded">Control Panel</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'history' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'history'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'history' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'history'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                         <span x-show="sidebarExpanded">History & Reports</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a :class="(activeTab === 'kb' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'kb'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'kb' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'kb'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                         <span x-show="sidebarExpanded">Knowledge Base</span>
                     </a></li>
@@ -885,10 +973,30 @@
                 kbSortCol: 'id',
                 kbSortDir: 'asc',
 
+                // ── Dashboard Pods & Workloads ─────────────────────────────
+                podViewAllScans: localStorage.getItem('kra-pod-all-scans') === 'true',
+                dashPodSearch: '',
+                dashPodNsFilter: '',
+                dashPodSevFilter: '',
+                dashPodSortCol: 'severity',
+                dashPodSortDir: 'asc',
+
+                // ── Dashboard Scan Targets ─────────────────────────────────
+                dashTargetSearch: '',
+                dashTargetSortCol: 'scan_id',
+                dashTargetSortDir: 'desc',
+
+                // ── Scan History filter / sort ─────────────────────────────
+                historySortCol: 'id',
+                historySortDir: 'desc',
+                historySearch: '',
+                historyModuleFilter: '',
+
                 // ── Findings detail / filter ───────────────────────────────
                 selectedScanFindings: [],
                 viewingScan: null,
                 findingFilter: null,
+                findingSearch: '',
                 findingSortDir: 'asc',
 
                 // ── BAS form ───────────────────────────────────────────────
@@ -912,9 +1020,17 @@
                 // ── Computed ───────────────────────────────────────────────
                 get filteredFindings() {
                     const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-                    const list = this.findingFilter
+                    let list = this.findingFilter
                         ? this.selectedScanFindings.filter(f => f.severity === this.findingFilter)
                         : this.selectedScanFindings;
+                    if (this.findingSearch) {
+                        const q = this.findingSearch.toLowerCase();
+                        list = list.filter(f =>
+                            f.subject.toLowerCase().includes(q) ||
+                            f.role.toLowerCase().includes(q) ||
+                            f.risk_description.toLowerCase().includes(q)
+                        );
+                    }
                     return [...list].sort((a, b) => {
                         const diff = (SEV_ORDER[a.severity] ?? 2) - (SEV_ORDER[b.severity] ?? 2);
                         return this.findingSortDir === 'asc' ? diff : -diff;
@@ -955,38 +1071,65 @@
                     }
                 },
 
+                dashPodSortBy(col) {
+                    if (this.dashPodSortCol === col) this.dashPodSortDir = this.dashPodSortDir === 'asc' ? 'desc' : 'asc';
+                    else { this.dashPodSortCol = col; this.dashPodSortDir = 'asc'; }
+                },
+                dashTargetSortBy(col) {
+                    if (this.dashTargetSortCol === col) this.dashTargetSortDir = this.dashTargetSortDir === 'asc' ? 'desc' : 'asc';
+                    else { this.dashTargetSortCol = col; this.dashTargetSortDir = 'asc'; }
+                },
+                historySortBy(col) {
+                    if (this.historySortCol === col) this.historySortDir = this.historySortDir === 'asc' ? 'desc' : 'asc';
+                    else { this.historySortCol = col; this.historySortDir = 'desc'; }
+                },
+                async goToScan(scanId) {
+                    if (!scanId) return;
+                    await this.fetchScanDetails(scanId);
+                    this.activeTab = 'history';
+                },
+
                 get dashPods() {
                     const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-                    const lastScan = this.scans[0];
-                    const findings = lastScan ? (lastScan.findings || []) : [];
 
-                    // Detect pod-specific scan: "Live Pod: {namespace}/{podName}"
-                    const lastTarget = lastScan ? (lastScan.target_name || '') : '';
-                    const podScanMatch = lastTarget.match(/^Live Pod:\s+[^/]+\/(.+)$/);
-                    const scannedPodName = podScanMatch ? podScanMatch[1] : null;
+                    // Helper: findings for a pod within a specific scan
+                    const podFindingsIn = (pod, scan) => {
+                        const pm = (scan.target_name || '').match(/^Live Pod:\s+[^/]+\/(.+)$/);
+                        const isScanForPod = !pm || pm[1] === pod.name;
+                        return (scan.findings || []).filter(f =>
+                            f.subject === `Pod: ${pod.name}` ||
+                            f.subject.startsWith(`Pod: ${pod.name} `) ||
+                            (pod.sa && f.subject === `ServiceAccount:${pod.sa}` && isScanForPod)
+                        );
+                    };
 
                     let pods = [];
                     if (this.clusterPodsSource === 'live' && this.clusterPods.length > 0) {
                         pods = this.clusterPods.map(pod => {
-                            const pf = findings.filter(f =>
-                                f.subject === `Pod: ${pod.name}` ||
-                                f.subject.startsWith(`Pod: ${pod.name} `) ||
-                                // SA findings: only attribute to the scanned pod when it's a pod-specific scan
-                                (pod.sa && f.subject === `ServiceAccount:${pod.sa}` &&
-                                    (!scannedPodName || pod.name === scannedPodName))
-                            );
-                            const maxSev = pf.reduce((best, f) =>
+                            // Find most recent scan with findings for this pod (for navigation + ON mode)
+                            let lastScanId = null, mostRecentPf = [];
+                            for (const scan of this.scans) {
+                                const pf = podFindingsIn(pod, scan);
+                                if (pf.length > 0) { lastScanId = scan.id; mostRecentPf = pf; break; }
+                            }
+                            // Display: OFF = last overall scan; ON = per-pod most recent
+                            const displayPf = this.podViewAllScans
+                                ? mostRecentPf
+                                : podFindingsIn(pod, this.scans[0] || { findings: [] });
+                            const maxSev = displayPf.reduce((best, f) =>
                                 best === null || (SEV_ORDER[f.severity] ?? 2) < (SEV_ORDER[best] ?? 2) ? f.severity : best
                             , null);
-                            return { name: pod.name, namespace: pod.namespace, phase: pod.phase || 'Unknown', node: pod.node || '', sa: pod.sa || '', findingsCount: pf.length, maxSeverity: maxSev };
+                            return { name: pod.name, namespace: pod.namespace, phase: pod.phase || 'Unknown', node: pod.node || '', sa: pod.sa || '', findingsCount: displayPf.length, maxSeverity: maxSev, lastScanId };
                         });
                     } else {
+                        const lastScan = this.scans[0];
+                        const findings = lastScan ? (lastScan.findings || []) : [];
                         const podMap = {};
                         findings.forEach(f => {
                             const m = f.subject.match(/^Pod:\s+(.+?)(?:\s+\(.*\))?$/);
                             if (!m) return;
                             const key = m[1];
-                            if (!podMap[key]) podMap[key] = { name: key, namespace: '—', phase: '—', node: '—', findingsCount: 0, _sevs: [] };
+                            if (!podMap[key]) podMap[key] = { name: key, namespace: '—', phase: '—', node: '—', sa: '—', findingsCount: 0, _sevs: [], lastScanId: lastScan ? lastScan.id : null };
                             podMap[key].findingsCount++;
                             podMap[key]._sevs.push(f.severity);
                         });
@@ -995,10 +1138,7 @@
                             return { ...p, maxSeverity: maxSev };
                         });
                     }
-                    return pods.sort((a, b) => {
-                        const sd = (SEV_ORDER[a.maxSeverity] ?? 99) - (SEV_ORDER[b.maxSeverity] ?? 99);
-                        return sd !== 0 ? sd : b.findingsCount - a.findingsCount;
-                    });
+                    return pods; // sorting handled by filteredDashPods
                 },
 
                 get dashTargets() {
@@ -1018,6 +1158,65 @@
                             high: f.filter(x => x.severity === 'HIGH').length,
                         };
                     }).sort((a, b) => b.scan_id - a.scan_id);
+                },
+
+                get filteredDashPods() {
+                    const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                    let list = this.dashPods;
+                    if (this.dashPodSearch) { const q = this.dashPodSearch.toLowerCase(); list = list.filter(p => p.name.toLowerCase().includes(q) || p.namespace.toLowerCase().includes(q)); }
+                    if (this.dashPodNsFilter) list = list.filter(p => p.namespace === this.dashPodNsFilter);
+                    if (this.dashPodSevFilter) list = list.filter(p => (p.maxSeverity || 'NONE') === this.dashPodSevFilter);
+                    return [...list].sort((a, b) => {
+                        let av, bv;
+                        switch (this.dashPodSortCol) {
+                            case 'severity': av = SEV_ORDER[a.maxSeverity] ?? 99; bv = SEV_ORDER[b.maxSeverity] ?? 99; break;
+                            case 'findings': av = a.findingsCount; bv = b.findingsCount; break;
+                            case 'namespace': av = a.namespace; bv = b.namespace; break;
+                            case 'phase': av = a.phase; bv = b.phase; break;
+                            default: av = a.name; bv = b.name;
+                        }
+                        if (typeof av === 'string') return this.dashPodSortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+                        return this.dashPodSortDir === 'asc' ? av - bv : bv - av;
+                    });
+                },
+
+                get filteredDashTargets() {
+                    let list = this.dashTargets;
+                    if (this.dashTargetSearch) { const q = this.dashTargetSearch.toLowerCase(); list = list.filter(t => t.target.toLowerCase().includes(q)); }
+                    return [...list].sort((a, b) => {
+                        let av, bv;
+                        switch (this.dashTargetSortCol) {
+                            case 'target': av = a.target; bv = b.target; break;
+                            case 'date': av = a.scan_date; bv = b.scan_date; break;
+                            case 'total': av = a.total; bv = b.total; break;
+                            case 'critical': av = a.critical; bv = b.critical; break;
+                            case 'high': av = a.high; bv = b.high; break;
+                            default: av = a.scan_id; bv = b.scan_id;
+                        }
+                        if (typeof av === 'string') return this.dashTargetSortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+                        return this.dashTargetSortDir === 'asc' ? av - bv : bv - av;
+                    });
+                },
+
+                get filteredScans() {
+                    let list = this.scans;
+                    if (this.historySearch) { const q = this.historySearch.toLowerCase(); list = list.filter(s => s.target_name.toLowerCase().includes(q)); }
+                    if (this.historyModuleFilter) list = list.filter(s => this.scanModule(s.target_name) === this.historyModuleFilter);
+                    return [...list].sort((a, b) => {
+                        let av, bv;
+                        const af = a.findings || [], bf = b.findings || [];
+                        switch (this.historySortCol) {
+                            case 'date': av = a.scan_date; bv = b.scan_date; break;
+                            case 'module': av = this.scanModule(a.target_name); bv = this.scanModule(b.target_name); break;
+                            case 'target': av = a.target_name; bv = b.target_name; break;
+                            case 'critical': av = af.filter(f=>f.severity==='CRITICAL').length; bv = bf.filter(f=>f.severity==='CRITICAL').length; break;
+                            case 'high': av = af.filter(f=>f.severity==='HIGH').length; bv = bf.filter(f=>f.severity==='HIGH').length; break;
+                            case 'total': av = af.length; bv = bf.length; break;
+                            default: av = a.id; bv = b.id;
+                        }
+                        if (typeof av === 'string') return this.historySortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+                        return this.historySortDir === 'asc' ? av - bv : bv - av;
+                    });
                 },
 
                 get basNamespaces() {
@@ -1089,6 +1288,7 @@
                 // ── Init ───────────────────────────────────────────────────
                 async init() {
                     await this.fetchData();
+                    this.$watch('podViewAllScans', val => localStorage.setItem('kra-pod-all-scans', val));
                 },
 
                 // ── Data fetchers ──────────────────────────────────────────
@@ -1196,6 +1396,7 @@
                         this.selectedScanFindings = await res.json();
                         this.viewingScan = scanId;
                         this.findingFilter = null;
+                        this.findingSearch = '';
                         this.findingSortDir = 'asc';
                     } catch (e) {
                         console.error(e);
