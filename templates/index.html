@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" :data-theme="theme" x-data="appData()" x-init="init()">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-base-200 text-base-content min-h-screen" x-data="appData()" x-init="init()">
+<body class="bg-base-200 text-base-content min-h-screen">
 
     <div class="drawer lg:drawer-open">
         <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
@@ -31,42 +31,42 @@
 
                 <!-- Tab 1: Dashboard -->
                 <div x-show="activeTab === 'dashboard'" x-cloak>
-                    <h2 class="text-lg font-bold mb-4 text-white font-mono uppercase tracking-wider">Dashboard</h2>
+                    <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Dashboard</h2>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                        <div class="stat bg-base-100 border border-gray-700 rounded-sm">
-                            <div class="stat-title text-gray-300 text-sm font-mono uppercase tracking-wider">Total Scans</div>
-                            <div class="stat-value text-white" x-text="scans.length"></div>
+                        <div class="stat bg-base-100 border border-base-300 rounded-sm">
+                            <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">Total Scans</div>
+                            <div class="stat-value text-base-content" x-text="scans.length"></div>
                         </div>
-                        <div class="stat bg-base-100 border border-gray-700 rounded-sm">
-                            <div class="stat-title text-gray-300 text-sm font-mono uppercase tracking-wider">Latest Scan Findings</div>
-                            <div class="stat-value text-white" x-text="scans[0] ? scans[0].findings.length : 0"></div>
+                        <div class="stat bg-base-100 border border-base-300 rounded-sm">
+                            <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">Latest Scan Findings</div>
+                            <div class="stat-value text-base-content" x-text="scans[0] ? scans[0].findings.length : 0"></div>
                         </div>
-                        <div class="stat bg-base-100 border border-gray-700 rounded-sm">
-                            <div class="stat-title text-gray-300 text-sm font-mono uppercase tracking-wider">Active Rules</div>
-                            <div class="stat-value text-white" x-text="rules.length"></div>
+                        <div class="stat bg-base-100 border border-base-300 rounded-sm">
+                            <div class="stat-title text-base-content/70 text-sm font-mono uppercase tracking-wider">Active Rules</div>
+                            <div class="stat-value text-base-content" x-text="rules.length"></div>
                         </div>
                     </div>
-                    <div class="bg-base-100 p-6 border border-gray-700 rounded-sm w-full md:w-2/3">
-                        <h3 class="text-base font-bold mb-4 text-gray-200 font-mono uppercase tracking-wider">Rules by Category</h3>
+                    <div class="bg-base-100 p-6 border border-base-300 rounded-sm w-full md:w-2/3">
+                        <h3 class="text-base font-bold mb-4 text-base-content/80 font-mono uppercase tracking-wider">Rules by Category</h3>
                         <div class="relative w-full h-[22rem]"><canvas id="categoryChart"></canvas></div>
                     </div>
                 </div>
 
                 <!-- Tab 2: Control Panel -->
                 <div x-show="activeTab === 'control'" x-transition.opacity x-cloak>
-                    <h2 class="text-lg font-bold mb-4 text-white font-mono uppercase tracking-wider">Control Panel</h2>
+                    <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Control Panel</h2>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <!-- Scanners -->
-                        <div class="bg-base-100 border border-gray-700 rounded-sm">
+                        <div class="bg-base-100 border border-base-300 rounded-sm">
                             <div class="p-5">
-                                <h2 class="text-base font-bold text-white font-mono uppercase tracking-wider">Vulnerability Scanners</h2>
-                                <p class="text-sm text-gray-300 mt-1">Run static analysis against Kubernetes configurations.</p>
+                                <h2 class="text-base font-bold text-base-content font-mono uppercase tracking-wider">Vulnerability Scanners</h2>
+                                <p class="text-sm text-base-content/70 mt-1">Run static analysis against Kubernetes configurations.</p>
                                 <div class="flex flex-col gap-3 mt-5">
-                                    <button class="btn btn-outline btn-sm rounded-sm text-cyan-300 border-cyan-700 hover:bg-cyan-950 hover:border-cyan-500 w-full" @click="runOfflineScan()" :disabled="loading">
+                                    <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full" @click="runOfflineScan()" :disabled="loading">
                                         <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
                                         Run Offline Scan (YAML)
                                     </button>
-                                    <button class="btn btn-outline btn-sm rounded-sm text-cyan-300 border-cyan-700 hover:bg-cyan-950 hover:border-cyan-500 w-full" @click="runLiveScan()" :disabled="loading">
+                                    <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full" @click="runLiveScan()" :disabled="loading">
                                         <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
                                         Run Live Cluster Scan
                                     </button>
@@ -75,28 +75,28 @@
                         </div>
 
                         <!-- BAS -->
-                        <div class="bg-base-100 border border-red-900/50 rounded-sm">
+                        <div class="bg-base-100 border border-error/30 rounded-sm">
                             <div class="p-5">
-                                <h2 class="text-base font-bold text-red-400 font-mono uppercase tracking-wider">Breach & Attack Simulation</h2>
-                                <p class="text-sm text-gray-300 mt-1">Simulate real-world attacks to validate defenses.</p>
+                                <h2 class="text-base font-bold text-error font-mono uppercase tracking-wider">Breach & Attack Simulation</h2>
+                                <p class="text-sm text-base-content/70 mt-1">Simulate real-world attacks to validate defenses.</p>
                                 <div class="form-control w-full mt-3">
-                                    <label class="label py-1"><span class="label-text text-gray-300 text-sm font-mono uppercase">Namespace</span></label>
-                                    <input type="text" x-model="basNamespace" class="input input-bordered input-sm rounded-sm border-gray-600 bg-gray-900 text-gray-200 w-full focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" placeholder="default" />
+                                    <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Namespace</span></label>
+                                    <input type="text" x-model="basNamespace" class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary focus:ring-1 focus:ring-primary" placeholder="default" />
                                 </div>
                                 <div class="form-control w-full mt-2">
-                                    <label class="label py-1"><span class="label-text text-gray-300 text-sm font-mono uppercase">Pod Name</span></label>
-                                    <input type="text" x-model="basPodName" class="input input-bordered input-sm rounded-sm border-gray-600 bg-gray-900 text-gray-200 w-full focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" placeholder="e.g. nginx-pod" />
+                                    <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Pod Name</span></label>
+                                    <input type="text" x-model="basPodName" class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary focus:ring-1 focus:ring-primary" placeholder="e.g. nginx-pod" />
                                 </div>
                                 <div class="mt-5">
-                                    <button class="btn btn-outline btn-sm rounded-sm text-red-400 border-red-900 hover:bg-red-950 hover:border-red-700 w-full" @click="runBas()" :disabled="loading || !basPodName">
+                                    <button class="btn btn-outline btn-sm rounded-sm text-error border-error/50 hover:bg-error/10 hover:border-error w-full" @click="runBas()" :disabled="loading || !basPodName">
                                         <span x-show="loading" class="loading loading-spinner"></span>
                                         Simulate Token Theft
                                     </button>
                                 </div>
 
-                                <div x-show="basResult" class="mt-4 p-3 bg-gray-950 border border-gray-700 rounded-sm font-mono text-sm" :class="basResult?.success ? 'text-red-400' : 'text-green-400'">
+                                <div x-show="basResult" class="mt-4 p-3 bg-base-100 border border-base-300 rounded-sm font-mono text-sm" :class="basResult?.success ? 'text-error' : 'text-success'">
                                     <div class="font-bold mb-1 uppercase tracking-wider" x-text="basResult?.success ? '▶ Exploit Successful' : '▶ Exploit Blocked'"></div>
-                                    <div class="break-words opacity-90 text-sm" x-text="basResult?.details"></div>
+                                    <div class="break-words text-sm" x-text="basResult?.details"></div>
                                 </div>
                             </div>
                         </div>
@@ -105,12 +105,12 @@
 
                 <!-- Tab 3: History & Reports -->
                 <div x-show="activeTab === 'history'" x-transition.opacity x-cloak>
-                    <h2 class="text-lg font-bold mb-4 text-white font-mono uppercase tracking-wider">Scan History</h2>
+                    <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Scan History</h2>
 
-                    <div x-show="!viewingScan" class="overflow-x-auto bg-base-100 border border-gray-700 rounded-sm">
+                    <div x-show="!viewingScan" class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
                         <table class="table table-xs">
                             <thead>
-                                <tr class="text-gray-300 text-xs font-mono uppercase tracking-wider">
+                                <tr class="text-base-content/70 text-xs font-mono uppercase tracking-wider">
                                     <th>ID</th>
                                     <th>Date</th>
                                     <th>Target</th>
@@ -120,15 +120,15 @@
                             </thead>
                             <tbody>
                                 <template x-for="scan in scans" :key="scan.id">
-                                    <tr class="hover:bg-gray-800/50 border-b border-gray-700">
-                                        <th class="text-gray-300 font-mono text-xs" x-text="scan.id"></th>
-                                        <td class="text-gray-300 font-mono text-xs" x-text="new Date(scan.scan_date).toLocaleString()"></td>
+                                    <tr class="hover:bg-base-300/50 border-b border-base-300">
+                                        <th class="text-base-content/70 font-mono text-xs" x-text="scan.id"></th>
+                                        <td class="text-base-content/70 font-mono text-xs" x-text="new Date(scan.scan_date).toLocaleString()"></td>
                                         <td>
-                                            <span x-text="scan.target_name" class="inline-block mr-2 text-white font-mono text-xs"></span>
+                                            <span x-text="scan.target_name" class="inline-block mr-2 text-base-content font-mono text-xs"></span>
                                             <span x-show="scan.target_name.includes('BAS Simulation')" class="badge badge-sm badge-error rounded-sm">BAS</span>
                                         </td>
                                         <td>
-                                            <span class="text-gray-300 font-mono text-xs" x-text="scan.findings.length"></span>
+                                            <span class="text-base-content/70 font-mono text-xs" x-text="scan.findings.length"></span>
                                         </td>
                                         <td>
                                             <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="fetchScanDetails(scan.id)">View</button>
@@ -136,21 +136,21 @@
                                     </tr>
                                 </template>
                                 <tr x-show="scans.length === 0">
-                                    <td colspan="5" class="text-center py-6 text-gray-400 font-mono text-xs">No scans found.</td>
+                                    <td colspan="5" class="text-center py-6 text-base-content/60 font-mono text-xs">No scans found.</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <div x-show="viewingScan" class="bg-base-100 border border-gray-700 rounded-sm p-5" x-cloak>
+                    <div x-show="viewingScan" class="bg-base-100 border border-base-300 rounded-sm p-5" x-cloak>
                         <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-base font-mono text-white uppercase tracking-wider">Findings — Scan #<span x-text="viewingScan"></span></h3>
+                            <h3 class="text-base font-mono text-base-content uppercase tracking-wider">Findings — Scan #<span x-text="viewingScan"></span></h3>
                             <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="viewingScan = null">Back</button>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="table table-xs">
                                 <thead>
-                                    <tr class="text-gray-300 text-xs font-mono uppercase tracking-wider">
+                                    <tr class="text-base-content/70 text-xs font-mono uppercase tracking-wider">
                                         <th>Target Resource</th>
                                         <th>Risk Context</th>
                                         <th>Description</th>
@@ -158,15 +158,15 @@
                                 </thead>
                                 <tbody>
                                     <template x-for="finding in selectedScanFindings" :key="finding.id">
-                                        <tr class="hover:bg-gray-800/50 border-b border-gray-700"
-                                            :class="finding.risk_description.includes('CRITICAL') ? 'bg-red-950 border-l-4 border-red-500' : ''">
-                                            <td class="font-mono text-xs text-gray-200 break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-red-200' : ''" x-text="finding.subject"></td>
-                                            <td class="font-mono text-xs break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-red-300' : 'text-gray-300'" x-text="finding.role"></td>
-                                            <td class="text-xs font-mono break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-red-200 font-bold' : 'text-gray-300'" x-text="finding.risk_description"></td>
+                                        <tr class="hover:bg-base-300/50 border-b border-base-300"
+                                            :class="finding.risk_description.includes('CRITICAL') ? 'bg-error/10 border-l-4 border-error' : ''">
+                                            <td class="font-mono text-xs text-base-content break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-error-content' : ''" x-text="finding.subject"></td>
+                                            <td class="font-mono text-xs break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-error/80' : 'text-base-content/70'" x-text="finding.role"></td>
+                                            <td class="text-xs font-mono break-words whitespace-normal" :class="finding.risk_description.includes('CRITICAL') ? 'text-error-content font-bold' : 'text-base-content/70'" x-text="finding.risk_description"></td>
                                         </tr>
                                     </template>
                                     <tr x-show="selectedScanFindings.length === 0">
-                                        <td colspan="3" class="text-center py-6 text-gray-400 font-mono text-xs">No findings in this scan.</td>
+                                        <td colspan="3" class="text-center py-6 text-base-content/60 font-mono text-xs">No findings in this scan.</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -176,10 +176,10 @@
 
                 <!-- Tab 4: Threat Knowledge Base -->
                 <div x-show="activeTab === 'kb'" x-transition.opacity x-cloak>
-                    <h2 class="text-lg font-bold mb-4 text-white font-mono uppercase tracking-wider">Threat Knowledge Base</h2>
+                    <h2 class="text-lg font-bold mb-4 text-base-content font-mono uppercase tracking-wider">Threat Knowledge Base</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <template x-for="rule in rules" :key="rule.description">
-                            <div class="bg-base-100 border border-gray-700 rounded-sm p-4">
+                            <div class="bg-base-100 border border-base-300 rounded-sm p-4">
                                 <div class="flex justify-between items-start">
                                     <span class="badge badge-sm rounded-sm font-mono uppercase tracking-wider"
                                         :class="{
@@ -189,11 +189,11 @@
                                         }"
                                         x-text="rule.category"></span>
                                 </div>
-                                <h3 class="mt-3 text-base font-mono text-white leading-snug" x-text="rule.description"></h3>
-                                <div class="mt-3 text-sm font-mono text-gray-400" x-show="rule.dangerous_rules">
-                                    <div x-show="rule.dangerous_verbs" class="mb-1">Verbs: <span class="text-yellow-400" x-text="rule.dangerous_verbs"></span></div>
-                                    <div x-show="rule.dangerous_resources" class="mb-1">Res: <span class="text-cyan-400" x-text="rule.dangerous_resources"></span></div>
-                                    <div x-show="rule.key">Key: <span class="text-green-400" x-text="rule.key"></span></div>
+                                <h3 class="mt-3 text-base font-mono text-base-content leading-snug" x-text="rule.description"></h3>
+                                <div class="mt-3 text-sm font-mono text-base-content/60" x-show="rule.dangerous_rules">
+                                    <div x-show="rule.dangerous_verbs" class="mb-1">Verbs: <span class="text-warning" x-text="rule.dangerous_verbs"></span></div>
+                                    <div x-show="rule.dangerous_resources" class="mb-1">Res: <span class="text-primary" x-text="rule.dangerous_resources"></span></div>
+                                    <div x-show="rule.key">Key: <span class="text-success" x-text="rule.key"></span></div>
                                 </div>
                             </div>
                         </template>
@@ -205,37 +205,48 @@
 
         <div class="drawer-side">
             <label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
-            <ul :class="sidebarExpanded ? 'w-72' : 'w-20'" class="menu p-0 min-h-full bg-gray-900 text-gray-400 border-r border-gray-800 transition-all duration-300">
-                <!-- Toggle button -->
-                <li class="border-b border-gray-800">
-                    <button @click="sidebarExpanded = !sidebarExpanded" class="flex items-center justify-center w-full px-3 py-3 text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 rounded-none cursor-pointer">
+            <ul :class="sidebarExpanded ? 'w-72' : 'w-20'" class="flex flex-col p-0 min-h-full bg-base-200 text-base-content/70 border-r border-base-300 transition-all duration-300">
+
+                <li class="border-b border-base-300">
+                    <button @click="sidebarExpanded = !sidebarExpanded" class="flex items-center justify-center w-full px-3 py-3 text-base-content/60 hover:text-base-content hover:bg-base-300/50 rounded-none cursor-pointer">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 transition-transform duration-300" :class="sidebarExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
                         </svg>
                     </button>
                 </li>
-                <!-- Title -->
+
                 <li x-show="sidebarExpanded">
-                    <div class="mx-3 mt-3 mb-4 p-3 border border-cyan-500 rounded-sm bg-gray-950 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
-                        <span class="text-lg font-bold text-cyan-400 font-mono tracking-widest uppercase block text-center">Kube Risk Analyzer</span>
+                    <div class="mx-3 mt-3 mb-4 p-3 border border-primary rounded-sm bg-base-100 shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                        <span class="text-lg font-bold text-primary font-mono tracking-widest uppercase block text-center">Kube Risk Analyzer</span>
                     </div>
                 </li>
-                <li class="px-3 mb-1"><a :class="(activeTab === 'dashboard' ? 'bg-gray-800 text-gray-200 border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'dashboard'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-gray-800/50 hover:text-gray-300 rounded-none transition-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-                    <span x-show="sidebarExpanded">Dashboard</span>
-                </a></li>
-                <li class="px-3 mb-1"><a :class="(activeTab === 'control' ? 'bg-gray-800 text-gray-200 border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'control'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-gray-800/50 hover:text-gray-300 rounded-none transition-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    <span x-show="sidebarExpanded">Control Panel</span>
-                </a></li>
-                <li class="px-3 mb-1"><a :class="(activeTab === 'history' ? 'bg-gray-800 text-gray-200 border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'history'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-gray-800/50 hover:text-gray-300 rounded-none transition-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
-                    <span x-show="sidebarExpanded">History & Reports</span>
-                </a></li>
-                <li class="px-3 mb-1"><a :class="(activeTab === 'kb' ? 'bg-gray-800 text-gray-200 border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'kb'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-gray-800/50 hover:text-gray-300 rounded-none transition-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-                    <span x-show="sidebarExpanded">Knowledge Base</span>
-                </a></li>
+
+                <div class="flex-1">
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'dashboard' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'dashboard'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                        <span x-show="sidebarExpanded">Dashboard</span>
+                    </a></li>
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'control' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'control'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span x-show="sidebarExpanded">Control Panel</span>
+                    </a></li>
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'history' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'history'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+                        <span x-show="sidebarExpanded">History & Reports</span>
+                    </a></li>
+                    <li class="px-3 mb-1"><a :class="(activeTab === 'kb' ? 'bg-base-300 text-base-content border-l-4 border-primary font-medium' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" @click="activeTab = 'kb'" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                        <span x-show="sidebarExpanded">Knowledge Base</span>
+                    </a></li>
+                </div>
+
+                <li class="border-t border-base-300">
+                    <button @click="toggleTheme()" :class="sidebarExpanded ? 'justify-start px-4' : 'justify-center'" class="flex items-center w-full px-3 py-3 text-base-content/60 hover:text-base-content hover:bg-base-300/50 rounded-none cursor-pointer gap-2">
+                        <svg x-show="theme === 'dark'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <svg x-show="theme === 'light'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                        <span x-show="sidebarExpanded" class="text-xs font-mono uppercase tracking-wider" x-text="theme === 'dark' ? 'Light Mode' : 'Dark Mode'"></span>
+                    </button>
+                </li>
             </ul>
         </div>
     </div>
@@ -253,7 +264,13 @@
                 basResult: null,
                 loading: false,
                 sidebarExpanded: true,
+                theme: localStorage.getItem('kra-theme') || 'dark',
                 chartInstance: null,
+
+                toggleTheme() {
+                    this.theme = this.theme === 'dark' ? 'light' : 'dark';
+                    localStorage.setItem('kra-theme', this.theme);
+                },
 
                 async init() {
                     await this.fetchData();
