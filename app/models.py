@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -13,6 +13,7 @@ class RiskRule(Base):
     category = Column(String, default="rbac")
     key = Column(String, nullable=True)
     severity = Column(String, default="MEDIUM")
+    is_enabled = Column(Boolean, default=True)
 
 
 class ScanHistory(Base):
@@ -45,3 +46,5 @@ class BasScript(Base):
     name = Column(String)
     description = Column(String, nullable=True)
     script_content = Column(String)
+    is_default = Column(Boolean, default=False)
+    is_enabled = Column(Boolean, default=True)

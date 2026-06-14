@@ -20,10 +20,15 @@ def run_migrations(conn):
     """Add missing columns to existing tables without dropping data."""
     migrations = [
         ("risk_rules", "severity", "VARCHAR DEFAULT 'MEDIUM'"),
+        ("risk_rules", "is_enabled", "BOOLEAN DEFAULT 1"),
         ("findings",   "severity", "VARCHAR DEFAULT 'MEDIUM'"),
+        ("bas_scripts", "is_default", "BOOLEAN DEFAULT 0"),
+        ("bas_scripts", "is_enabled", "BOOLEAN DEFAULT 1"),
     ]
     for table, column, col_def in migrations:
         rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        if not rows:
+            continue  # table doesn't exist yet (fresh DB — will be created by models)
         existing = {row[1] for row in rows}
         if column not in existing:
             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))

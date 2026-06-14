@@ -406,15 +406,14 @@
                                 <div class="form-control w-full mt-2">
                                     <label class="label py-1"><span class="label-text text-base-content/70 text-sm font-mono uppercase">Attack Vector</span></label>
                                     <select x-model="selectedSimType" class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary">
+                                        <option value="">— Select an attack vector —</option>
                                         <optgroup label="Default Simulations">
-                                            <option value="token_theft">Token Theft (built-in)</option>
-                                            <option value="socket_escape">Socket Escape (built-in)</option>
-                                            <option value="host_filesystem">Host Filesystem Access (built-in)</option>
-                                            <option value="privilege_recon">Privilege Recon (built-in)</option>
-                                            <option value="env_leak">Env Secret Leak (built-in)</option>
+                                            <template x-for="s in (scripts || []).filter(s => s.is_default && s.is_enabled)" :key="s.id">
+                                                <option :value="'script:' + s.id" x-text="s.name"></option>
+                                            </template>
                                         </optgroup>
                                         <optgroup label="Custom Scripts">
-                                            <template x-for="s in scripts" :key="s.id">
+                                            <template x-for="s in (scripts || []).filter(s => !s.is_default && s.is_enabled)" :key="s.id">
                                                 <option :value="'script:' + s.id" x-text="s.name"></option>
                                             </template>
                                         </optgroup>
@@ -447,8 +446,8 @@
                                     + New Script
                                 </button>
                             </div>
-                            <div x-show="scripts.length === 0" class="text-center py-8 text-base-content/40 font-mono text-sm">No custom scripts yet.</div>
-                            <div x-show="scripts.length > 0" class="overflow-x-auto">
+                            <div x-show="(scripts || []).filter(s => !s.is_default).length === 0" class="text-center py-8 text-base-content/40 font-mono text-sm">No custom scripts yet.</div>
+                            <div x-show="(scripts || []).filter(s => !s.is_default).length > 0" class="overflow-x-auto">
                                 <table class="table table-xs">
                                     <thead>
                                         <tr class="text-base-content/70 text-xs font-mono uppercase tracking-wider">
@@ -459,7 +458,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <template x-for="s in scripts" :key="s.id">
+                                        <template x-for="s in (scripts || []).filter(s => !s.is_default)" :key="s.id">
                                             <tr class="hover:bg-base-300/50 border-b border-base-300">
                                                 <td class="font-mono text-xs text-primary font-semibold" x-text="s.name"></td>
                                                 <td class="font-mono text-xs text-base-content/70" x-text="s.description || '—'"></td>
@@ -721,6 +720,7 @@
                                         </span>
                                     </th>
                                     <th class="font-mono text-xs uppercase tracking-wider">Description &amp; Parameters</th>
+                                    <th class="font-mono text-xs uppercase tracking-wider w-16 text-center">Enabled</th>
                                     <th class="font-mono text-xs uppercase tracking-wider w-20 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -730,7 +730,8 @@
                                         :class="{
                                             'bg-error/10 border-l-4 border-error': rule.severity === 'CRITICAL',
                                             'bg-warning/5 border-l-4 border-warning': rule.severity === 'HIGH',
-                                            'border-l-4 border-info/40': rule.severity === 'MEDIUM'
+                                            'border-l-4 border-info/40': rule.severity === 'MEDIUM',
+                                            'opacity-40': !rule.is_enabled
                                         }">
                                         <td class="font-mono text-xs text-base-content/40 whitespace-nowrap" x-text="rule.id"></td>
                                         <td class="whitespace-nowrap text-center">
@@ -760,6 +761,11 @@
                                                 <span x-show="rule.key">Key:&nbsp;<span class="text-success" x-text="rule.key"></span></span>
                                             </div>
                                         </td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="toggle toggle-sm toggle-primary"
+                                                :checked="rule.is_enabled !== false"
+                                                @click.prevent="toggleRule(rule)" />
+                                        </td>
                                         <td class="whitespace-nowrap text-right">
                                             <button class="btn btn-ghost btn-xs rounded-sm text-primary" title="Edit" @click="openEditRule(rule)">
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
@@ -771,8 +777,77 @@
                                     </tr>
                                 </template>
                                 <tr x-show="filteredRules.length === 0">
-                                    <td colspan="5" class="text-center py-8 text-base-content/40 font-mono text-xs"
+                                    <td colspan="6" class="text-center py-8 text-base-content/40 font-mono text-xs"
                                         x-text="rules.length === 0 ? 'No rules in the knowledge base.' : 'No rules match the current filters.'"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 5: Built-in Tests -->
+                <div x-show="activeTab === 'builtins'" x-transition.opacity x-cloak>
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-bold text-base-content font-mono uppercase tracking-wider">Built-in Tests</h2>
+                        <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary font-mono" @click="openAddBuiltinScript()">
+                            + Add Test
+                        </button>
+                    </div>
+
+                    <!-- Filter -->
+                    <div class="flex flex-wrap items-center gap-2 mb-3 p-2 bg-base-200 border border-base-300 rounded-sm">
+                        <input type="text" x-model="builtinsSearch" placeholder="Search name or description..."
+                            class="input input-bordered input-xs rounded-sm border-base-300 bg-base-100 text-base-content focus:border-primary font-mono w-52" />
+                        <span class="ml-auto text-xs font-mono text-base-content/40"
+                            x-text="`${filteredBuiltins.length} / ${builtinScripts.length} tests`"></span>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="overflow-x-auto bg-base-100 border border-base-300 rounded-sm">
+                        <table class="table table-sm w-full">
+                            <thead>
+                                <tr class="bg-base-200 border-b border-base-300 text-base-content/60">
+                                    <th class="font-mono text-xs uppercase tracking-wider w-10 cursor-pointer select-none hover:text-base-content"
+                                        @click="builtinsSortBy('id')">
+                                        <span class="flex items-center gap-1">#
+                                            <span class="text-base-content/30" x-text="builtinsSortCol==='id'?(builtinsSortDir==='asc'?'↑':'↓'):'↕'"></span>
+                                        </span>
+                                    </th>
+                                    <th class="font-mono text-xs uppercase tracking-wider cursor-pointer select-none hover:text-base-content"
+                                        @click="builtinsSortBy('name')">
+                                        <span class="flex items-center gap-1">Name
+                                            <span class="text-base-content/30" x-text="builtinsSortCol==='name'?(builtinsSortDir==='asc'?'↑':'↓'):'↕'"></span>
+                                        </span>
+                                    </th>
+                                    <th class="font-mono text-xs uppercase tracking-wider">Description</th>
+                                    <th class="font-mono text-xs uppercase tracking-wider w-32 text-center">Status</th>
+                                    <th class="font-mono text-xs uppercase tracking-wider w-20 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="s in filteredBuiltins" :key="s.id">
+                                    <tr class="hover:bg-base-300/30 border-b border-base-300"
+                                        :class="!s.is_enabled ? 'opacity-50' : ''">
+                                        <td class="font-mono text-xs text-base-content/40" x-text="s.id"></td>
+                                        <td class="font-mono text-xs font-semibold text-primary" x-text="s.name"></td>
+                                        <td class="font-mono text-xs text-base-content/70" x-text="s.description || '—'"></td>
+                                        <td class="text-center">
+                                            <input type="checkbox" class="toggle toggle-sm toggle-primary"
+                                                :checked="s.is_enabled"
+                                                @click.prevent="toggleBuiltin(s)" />
+                                        </td>
+                                        <td class="text-right whitespace-nowrap">
+                                            <button class="btn btn-ghost btn-xs rounded-sm text-primary" @click="openEditScript(s)" title="Edit">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                            </button>
+                                            <button class="btn btn-ghost btn-xs rounded-sm text-error" @click="deleteScript(s.id)" title="Delete">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredBuiltins.length === 0">
+                                    <td colspan="5" class="text-center py-6 text-base-content/40 font-mono text-xs">No built-in tests found.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -813,6 +888,10 @@
                     <li class="px-3 mb-1"><a href="#history" :class="(activeTab === 'history' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                         <span x-show="sidebarExpanded">History & Reports</span>
+                    </a></li>
+                    <li class="px-3 mb-1"><a href="#builtins" :class="(activeTab === 'builtins' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                        <span x-show="sidebarExpanded">Built-in Tests</span>
                     </a></li>
                     <li class="px-3 mb-1"><a href="#kb" :class="(activeTab === 'kb' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
@@ -1012,9 +1091,14 @@
                 // ── BAS form ───────────────────────────────────────────────
                 basPodName: '',
                 basNamespace: 'default',
-                selectedSimType: 'token_theft',
+                selectedSimType: '',
                 basScriptId: '',
                 basResult: null,
+
+                // ── Built-in Tests tab ─────────────────────────────────────
+                builtinsSearch: '',
+                builtinsSortCol: 'id',
+                builtinsSortDir: 'asc',
 
                 // ── Rule modal ─────────────────────────────────────────────
                 ruleModalOpen: false,
@@ -1026,7 +1110,7 @@
                 scriptModalOpen: false,
                 scriptModalMode: 'create',
                 scriptModalError: '',
-                scriptForm: { id: null, name: '', description: '', script_content: '' },
+                scriptForm: { id: null, name: '', description: '', script_content: '', is_default: false },
 
                 // ── Computed ───────────────────────────────────────────────
                 get filteredFindings() {
@@ -1051,7 +1135,7 @@
                 get filteredRules() {
                     const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
                     const CAT_ORDER = { rbac: 0, workload: 1, network: 2 };
-                    let list = this.rules;
+                    let list = this.rules || [];
                     if (this.kbCategoryFilter) list = list.filter(r => r.category === this.kbCategoryFilter);
                     if (this.kbSeverityFilter) list = list.filter(r => (r.severity || 'MEDIUM') === this.kbSeverityFilter);
                     if (this.kbSearch) {
@@ -1102,6 +1186,7 @@
 
                 get dashPods() {
                     const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                    const scans = this.scans || [];
 
                     // Helper: findings for a pod within a specific scan
                     const podFindingsIn = (pod, scan) => {
@@ -1119,21 +1204,21 @@
                         pods = this.clusterPods.map(pod => {
                             // Find most recent scan with findings for this pod (for navigation + ON mode)
                             let lastScanId = null, mostRecentPf = [];
-                            for (const scan of this.scans) {
+                            for (const scan of scans) {
                                 const pf = podFindingsIn(pod, scan);
                                 if (pf.length > 0) { lastScanId = scan.id; mostRecentPf = pf; break; }
                             }
                             // Display: OFF = last overall scan; ON = per-pod most recent
                             const displayPf = this.podViewAllScans
                                 ? mostRecentPf
-                                : podFindingsIn(pod, this.scans[0] || { findings: [] });
+                                : podFindingsIn(pod, scans[0] || { findings: [] });
                             const maxSev = displayPf.reduce((best, f) =>
                                 best === null || (SEV_ORDER[f.severity] ?? 2) < (SEV_ORDER[best] ?? 2) ? f.severity : best
                             , null);
                             return { name: pod.name, namespace: pod.namespace, phase: pod.phase || 'Unknown', node: pod.node || '', sa: pod.sa || '', findingsCount: displayPf.length, maxSeverity: maxSev, lastScanId };
                         });
                     } else {
-                        const lastScan = this.scans[0];
+                        const lastScan = scans[0];
                         const findings = lastScan ? (lastScan.findings || []) : [];
                         const podMap = {};
                         findings.forEach(f => {
@@ -1154,7 +1239,7 @@
 
                 get dashTargets() {
                     const targetMap = {};
-                    this.scans.forEach(scan => {
+                    (this.scans || []).forEach(scan => {
                         const n = scan.target_name;
                         if (!targetMap[n] || scan.id > targetMap[n].id) targetMap[n] = scan;
                     });
@@ -1210,7 +1295,7 @@
                 },
 
                 get filteredScans() {
-                    let list = this.scans;
+                    let list = this.scans || [];
                     if (this.historySearch) { const q = this.historySearch.toLowerCase(); list = list.filter(s => s.target_name.toLowerCase().includes(q)); }
                     if (this.historyModuleFilter) list = list.filter(s => this.scanModule(s.target_name) === this.historyModuleFilter);
                     return [...list].sort((a, b) => {
@@ -1228,6 +1313,57 @@
                         if (typeof av === 'string') return this.historySortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
                         return this.historySortDir === 'asc' ? av - bv : bv - av;
                     });
+                },
+
+                get builtinScripts() {
+                    return (this.scripts || []).filter(s => s.is_default);
+                },
+
+                get filteredBuiltins() {
+                    let list = this.builtinScripts;
+                    if (this.builtinsSearch) {
+                        const q = this.builtinsSearch.toLowerCase();
+                        list = list.filter(s =>
+                            s.name.toLowerCase().includes(q) ||
+                            (s.description || '').toLowerCase().includes(q)
+                        );
+                    }
+                    return [...list].sort((a, b) => {
+                        let av, bv;
+                        switch (this.builtinsSortCol) {
+                            case 'name': av = a.name; bv = b.name; break;
+                            default: av = a.id; bv = b.id;
+                        }
+                        if (typeof av === 'string') return this.builtinsSortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+                        return this.builtinsSortDir === 'asc' ? av - bv : bv - av;
+                    });
+                },
+
+                builtinsSortBy(col) {
+                    if (this.builtinsSortCol === col) this.builtinsSortDir = this.builtinsSortDir === 'asc' ? 'desc' : 'asc';
+                    else { this.builtinsSortCol = col; this.builtinsSortDir = 'asc'; }
+                },
+
+                async toggleRule(rule) {
+                    const res = await fetch(`/rules/${rule.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ is_enabled: !(rule.is_enabled !== false) }),
+                    });
+                    if (res.ok) {
+                        rule.is_enabled = !(rule.is_enabled !== false);
+                    }
+                },
+
+                async toggleBuiltin(script) {
+                    const res = await fetch(`/scripts/${script.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ is_enabled: !script.is_enabled }),
+                    });
+                    if (res.ok) {
+                        script.is_enabled = !script.is_enabled;
+                    }
                 },
 
                 get basNamespaces() {
@@ -1298,7 +1434,7 @@
 
                 // ── Init ───────────────────────────────────────────────────
                 async init() {
-                    const VALID_TABS = ['dashboard', 'control', 'history', 'kb'];
+                    const VALID_TABS = ['dashboard', 'control', 'history', 'kb', 'builtins'];
                     const parseHash = raw => {
                         const parts = raw.split('/');
                         const tab = VALID_TABS.includes(parts[0]) ? parts[0] : 'dashboard';
@@ -1352,7 +1488,6 @@
                         this.clusterPods = podsData.pods || [];
                         this.clusterPodsSource = podsData.source || 'unavailable';
                         await this.fetchDumps();
-                        this.scripts = await scriptsRes.json();
                     } catch (e) {
                         console.error('Failed to fetch data', e);
                     }
@@ -1458,14 +1593,16 @@
                         if (this.selectedSimType && this.selectedSimType.startsWith('script:')) {
                             const scriptId = parseInt(this.selectedSimType.split(':')[1]);
                             body = { script_id: scriptId };
-                        } else {
-                            body = { simulation_type: this.selectedSimType || 'token_theft' };
                         }
                         const res = await fetch(`/bas/simulate/${this.basNamespace}/${this.basPodName}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(body),
                         });
+                        if (!res.ok) {
+                            const err = await res.json();
+                            throw new Error(err.detail || 'Simulation failed');
+                        }
                         this.basResult = await res.json();
                         await this.fetchData();
                     } catch (e) {
@@ -1538,7 +1675,14 @@
 
                 // ── Script CRUD ────────────────────────────────────────────
                 openAddScript() {
-                    this.scriptForm = { id: null, name: '', description: '', script_content: '' };
+                    this.scriptForm = { id: null, name: '', description: '', script_content: '', is_default: false };
+                    this.scriptModalMode = 'create';
+                    this.scriptModalError = '';
+                    this.scriptModalOpen = true;
+                },
+
+                openAddBuiltinScript() {
+                    this.scriptForm = { id: null, name: '', description: '', script_content: '', is_default: true };
                     this.scriptModalMode = 'create';
                     this.scriptModalError = '';
                     this.scriptModalOpen = true;
@@ -1550,6 +1694,7 @@
                         name: script.name || '',
                         description: script.description || '',
                         script_content: script.script_content || '',
+                        is_default: script.is_default || false,
                     };
                     this.scriptModalMode = 'edit';
                     this.scriptModalError = '';
@@ -1571,6 +1716,7 @@
                             name: this.scriptForm.name.trim(),
                             description: this.scriptForm.description.trim() || null,
                             script_content: this.scriptForm.script_content,
+                            is_default: this.scriptForm.is_default,
                         };
                         const url = this.scriptModalMode === 'create' ? '/scripts' : `/scripts/${this.scriptForm.id}`;
                         const method = this.scriptModalMode === 'create' ? 'POST' : 'PUT';

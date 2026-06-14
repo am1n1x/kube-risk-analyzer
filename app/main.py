@@ -16,14 +16,7 @@ from .scanners.rbac import analyze_rbac_bindings, get_sa_rbac_dangers
 from .scanners.workload import analyze_pod_workload
 from .scanners.network import analyze_services
 from .k8s_client import get_live_k8s_data
-from .bas import (
-    simulate_token_theft,
-    simulate_custom_script,
-    simulate_container_socket_escape,
-    simulate_host_filesystem_access,
-    simulate_privilege_recon,
-    simulate_env_secret_leak,
-)
+from .bas import simulate_custom_script
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -33,15 +26,6 @@ DUMPS_DIR = "dumps"
 os.makedirs(DUMPS_DIR, exist_ok=True)
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
-
-
-BAS_SIMULATION_MAP = {
-    "token_theft": simulate_token_theft,
-    "socket_escape": simulate_container_socket_escape,
-    "host_filesystem": simulate_host_filesystem_access,
-    "privilege_recon": simulate_privilege_recon,
-    "env_leak": simulate_env_secret_leak,
-}
 
 
 def _severity_key(finding):
@@ -85,21 +69,53 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         sync_rules_to_db(db)
-        # Seed example BAS script if not already present
-        exists = db.query(models.BasScript).filter(
-            models.BasScript.name == "Cloud Metadata Theft"
-        ).first()
-        if not exists:
-            db.add(models.BasScript(
-                name="Cloud Metadata Theft",
-                description="Simulates attacking cloud metadata endpoints (IMDSv1/IMDSv2) to leak instance credentials.",
-                script_content=(
-                    "curl -s -m 2 -H 'Metadata: true' "
-                    "http://metadata.google.internal/computeMetadata/v1/instance/"
-                    "service-accounts/default/token 2>&1 || "
-                    "curl -s -m 2 http://169.254.169.254/latest/meta-data/ 2>&1"
+        # Seed default BAS scripts if table is empty
+        if db.query(models.BasScript).count() == 0:
+            defaults = [
+                models.BasScript(
+                    name="Token Theft",
+                    description="Reads the mounted ServiceAccount token from the pod.",
+                    script_content="cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>&1",
+                    is_default=True, is_enabled=True,
                 ),
-            ))
+                models.BasScript(
+                    name="Container Socket Escape",
+                    description="Detects mounted container runtime sockets (docker/containerd/crio).",
+                    script_content="ls -la /var/run/docker.sock /run/containerd/containerd.sock /var/run/crio/crio.sock 2>&1",
+                    is_default=True, is_enabled=True,
+                ),
+                models.BasScript(
+                    name="Host Filesystem Access",
+                    description="Probes hostPath mounts and node-level credential locations.",
+                    script_content="ls -la /host /etc/shadow 2>&1",
+                    is_default=True, is_enabled=True,
+                ),
+                models.BasScript(
+                    name="Privilege Recon",
+                    description="Checks for root user and CAP_SYS_ADMIN capability.",
+                    script_content="id 2>&1; cat /proc/self/status | grep -i CapEff 2>&1",
+                    is_default=True, is_enabled=True,
+                ),
+                models.BasScript(
+                    name="Env Secret Leak",
+                    description="Harvests environment variables matching secret patterns (PASSWORD, SECRET, TOKEN, etc.).",
+                    script_content="env | grep -E 'PASSWORD|SECRET|TOKEN|APIKEY|AWS_' 2>&1",
+                    is_default=True, is_enabled=True,
+                ),
+                models.BasScript(
+                    name="Cloud Metadata Theft",
+                    description="Simulates attacking cloud metadata endpoints (IMDSv1/IMDSv2) to leak instance credentials.",
+                    script_content=(
+                        "curl -s -m 2 -H 'Metadata: true' "
+                        "http://metadata.google.internal/computeMetadata/v1/instance/"
+                        "service-accounts/default/token 2>&1 || "
+                        "curl -s -m 2 http://169.254.169.254/latest/meta-data/ 2>&1"
+                    ),
+                    is_default=False, is_enabled=True,
+                ),
+            ]
+            for s in defaults:
+                db.add(s)
             db.commit()
         yield
     finally:
@@ -177,6 +193,26 @@ def dump_live(
         role_bindings = [b for b in role_bindings if b.get("metadata", {}).get("namespace") == namespace]
     if pod_name:
         pods = [p for p in pods if p.get("metadata", {}).get("name") == pod_name]
+
+    # sanitize_for_serialization strips kind/apiVersion from each item — restore them
+    for item in pods:
+        item["kind"] = "Pod"
+        item["apiVersion"] = "v1"
+    for item in services:
+        item["kind"] = "Service"
+        item["apiVersion"] = "v1"
+    for item in roles:
+        item["kind"] = "Role"
+        item["apiVersion"] = "rbac.authorization.k8s.io/v1"
+    for item in cluster_roles:
+        item["kind"] = "ClusterRole"
+        item["apiVersion"] = "rbac.authorization.k8s.io/v1"
+    for item in role_bindings:
+        item["kind"] = "RoleBinding"
+        item["apiVersion"] = "rbac.authorization.k8s.io/v1"
+    for item in cluster_role_bindings:
+        item["kind"] = "ClusterRoleBinding"
+        item["apiVersion"] = "rbac.authorization.k8s.io/v1"
 
     items = pods + services + roles + cluster_roles + role_bindings + cluster_role_bindings
 
@@ -434,9 +470,18 @@ def scan_offline(
         elif kind == "Service":
             services.append(item)
 
-    rbac_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'rbac').all()
-    workload_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'workload').all()
-    network_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'network').all()
+    rbac_rules = db.query(models.RiskRule).filter(
+        models.RiskRule.category == 'rbac',
+        models.RiskRule.is_enabled == True,
+    ).all()
+    workload_rules = db.query(models.RiskRule).filter(
+        models.RiskRule.category == 'workload',
+        models.RiskRule.is_enabled == True,
+    ).all()
+    network_rules = db.query(models.RiskRule).filter(
+        models.RiskRule.category == 'network',
+        models.RiskRule.is_enabled == True,
+    ).all()
 
     findings = analyze_rbac_bindings(bindings, roles, cluster_roles, rbac_rules)
     findings_count = len(findings)
@@ -586,9 +631,18 @@ def scan_live(
     else:
         rbac_bindings = all_bindings
 
-    rbac_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'rbac').all()
-    workload_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'workload').all()
-    network_rules = db.query(models.RiskRule).filter(models.RiskRule.category == 'network').all()
+    rbac_rules = db.query(models.RiskRule).filter(
+        models.RiskRule.category == 'rbac',
+        models.RiskRule.is_enabled == True,
+    ).all()
+    workload_rules = db.query(models.RiskRule).filter(
+        models.RiskRule.category == 'workload',
+        models.RiskRule.is_enabled == True,
+    ).all()
+    network_rules = db.query(models.RiskRule).filter(
+        models.RiskRule.category == 'network',
+        models.RiskRule.is_enabled == True,
+    ).all()
 
     findings_count = 0
 
@@ -698,35 +752,37 @@ def simulate_bas(
     req: schemas.BASSimulateRequest = Body(default=schemas.BASSimulateRequest()),
     db: Session = Depends(get_db),
 ):
-    # Resolve simulation function and label
-    sim_func = None
-    script_label = "Token Theft"
-
+    # Resolve script from DB
+    script = None
     if req.script_id:
-        db_script = db.query(models.BasScript).filter(models.BasScript.id == req.script_id).first()
-        if not db_script:
+        script = db.query(models.BasScript).filter(models.BasScript.id == req.script_id).first()
+        if not script:
             raise HTTPException(status_code=404, detail="Script not found")
-        sim_func = lambda pn, ns: simulate_custom_script(pn, ns, db_script.script_content)
-        script_label = db_script.name
-    elif req.simulation_type and req.simulation_type in BAS_SIMULATION_MAP:
-        sim_func = BAS_SIMULATION_MAP[req.simulation_type]
-        label_map = {
-            "token_theft": "Token Theft",
-            "socket_escape": "Socket Escape",
-            "host_filesystem": "Host Filesystem Access",
-            "privilege_recon": "Privilege Recon",
-            "env_leak": "Env Secret Leak",
-        }
-        script_label = label_map.get(req.simulation_type, req.simulation_type.replace("_", " ").title())
     else:
-        sim_func = simulate_token_theft
+        script = db.query(models.BasScript).filter(
+            models.BasScript.is_default == True,
+            models.BasScript.name == "Token Theft",
+        ).first()
+        if not script:
+            # Fallback: any default script
+            script = db.query(models.BasScript).filter(
+                models.BasScript.is_default == True,
+            ).first()
+        if not script:
+            raise HTTPException(status_code=404, detail="No default BAS script found in database. Seed the database first.")
 
-    scan = models.ScanHistory(target_name=f"BAS Simulation: {namespace}/{pod_name} [{script_label}]")
+    if not script.is_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Simulation '{script.name}' has been disabled by an administrator.",
+        )
+
+    scan = models.ScanHistory(target_name=f"BAS Simulation: {namespace}/{pod_name} [{script.name}]")
     db.add(scan)
     db.commit()
     db.refresh(scan)
 
-    result = sim_func(pod_name, namespace)
+    result = simulate_custom_script(pod_name, namespace, script.script_content)
 
     if result["success"]:
         severity = result.get("severity", "CRITICAL")

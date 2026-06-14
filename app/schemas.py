@@ -12,6 +12,7 @@ class RiskRuleBase(BaseModel):
     category: str = "rbac"
     key: Optional[str] = None
     severity: str = "MEDIUM"
+    is_enabled: bool = True
 
 class RiskRuleCreate(RiskRuleBase):
     pass
@@ -23,6 +24,7 @@ class RiskRuleUpdate(BaseModel):
     category: Optional[str] = None
     key: Optional[str] = None
     severity: Optional[str] = None
+    is_enabled: Optional[bool] = None
 
 class RiskRuleSchema(RiskRuleBase):
     id: int
@@ -67,6 +69,8 @@ class BasScriptBase(BaseModel):
     name: str
     description: Optional[str] = None
     script_content: str
+    is_default: bool = False
+    is_enabled: bool = True
 
 class BasScriptCreate(BasScriptBase):
     pass
@@ -75,6 +79,8 @@ class BasScriptUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     script_content: Optional[str] = None
+    is_default: Optional[bool] = None
+    is_enabled: Optional[bool] = None
 
 class BasScriptSchema(BasScriptBase):
     id: int
@@ -84,5 +90,4 @@ class BasScriptSchema(BasScriptBase):
 # ── BAS simulate request ──────────────────────────────────────────────────────
 
 class BASSimulateRequest(BaseModel):
-    simulation_type: Optional[str] = None
     script_id: Optional[int] = None
