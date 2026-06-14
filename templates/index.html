@@ -584,6 +584,12 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                                     SARIF
                                 </button>
+                                <button x-show="scans.find(s => s.id === viewingScan)?.target_name.endsWith('.yaml') || scans.find(s => s.id === viewingScan)?.target_name.endsWith('.yml')"
+                                    class="btn btn-xs btn-outline btn-success shadow-[0_0_10px_rgba(34,197,94,0.3)] rounded-sm font-mono"
+                                    @click="window.location.href = `/scans/${viewingScan}/export/remediated-yaml`">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    Remediation YAML
+                                </button>
                                 <div class="w-px h-4 bg-base-300 mx-0.5"></div>
                                 <button class="btn btn-outline btn-info btn-xs rounded-sm font-mono" @click="viewingScan = null">Back</button>
                             </div>

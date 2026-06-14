@@ -17,6 +17,7 @@ from .rules import sync_rules_to_db
 from .scanners.rbac import analyze_rbac_bindings, get_sa_rbac_dangers
 from .scanners.workload import analyze_pod_workload
 from .scanners.network import analyze_services
+from .scanners.remediator import remediate_item
 from .k8s_client import get_live_k8s_data
 from .bas import simulate_custom_script
 
@@ -449,6 +450,48 @@ def export_scan_sarif(scan_id: int, db: Session = Depends(get_db)):
         content=json.dumps(sarif, ensure_ascii=False, indent=2),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="scan_{scan_id}_sarif.json"'},
+    )
+
+
+@app.get("/scans/{scan_id}/export/remediated-yaml")
+def export_remediated_yaml(scan_id: int, db: Session = Depends(get_db)):
+    scan = _get_scan_or_404(scan_id, db)
+
+    target = scan.target_name
+    if not target.endswith(".yaml") and not target.endswith(".yml"):
+        raise HTTPException(
+            status_code=400,
+            detail="Algorithmic remediation is only available for offline YAML scans.",
+        )
+
+    safe = os.path.basename(target)
+    path_in_dumps = os.path.join(DUMPS_DIR, safe)
+    if os.path.exists(path_in_dumps):
+        filepath = path_in_dumps
+    elif os.path.exists(safe):
+        filepath = safe
+    else:
+        raise HTTPException(status_code=404, detail=f"Source YAML file not found: {safe}")
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        raw_docs = list(yaml.safe_load_all(f))
+
+    remediated = []
+    for doc in raw_docs:
+        if not doc:
+            continue
+        if doc.get("kind") == "List":
+            doc["items"] = [remediate_item(i) for i in doc.get("items", [])]
+            remediated.append(doc)
+        else:
+            remediated.append(remediate_item(doc))
+
+    output = yaml.safe_dump_all(remediated, allow_unicode=True, default_flow_style=False)
+    filename = f"remediated_{safe}"
+    return Response(
+        content=output,
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
