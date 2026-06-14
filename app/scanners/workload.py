@@ -8,11 +8,15 @@ def _path_matches(data, path_parts: list[str]) -> bool:
     return False
 
 def analyze_pod_workload(pod_data: dict, db_workload_rules) -> list[tuple]:
-    """Returns list of (description, severity) tuples for matched workload rules."""
+    """Returns list of (description, severity, remediation) tuples for matched workload rules."""
     dangers_found = []
     for rule in db_workload_rules:
         if rule.key:
             path_parts = rule.key.split('.')
             if _path_matches(pod_data, path_parts):
-                dangers_found.append((rule.description, getattr(rule, "severity", "MEDIUM")))
+                dangers_found.append((
+                    rule.description,
+                    getattr(rule, "severity", "MEDIUM"),
+                    getattr(rule, "remediation", None),
+                ))
     return dangers_found

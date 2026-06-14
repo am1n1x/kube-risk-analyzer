@@ -617,16 +617,17 @@
                             <table class="table table-xs">
                                 <thead>
                                     <tr class="text-base-content/70 text-xs font-mono uppercase tracking-wider">
-                                        <th>
+                                        <th class="w-[10%] text-center">
                                             <button class="flex items-center gap-1 hover:text-base-content transition-colors"
                                                 @click="findingSortDir = findingSortDir === 'asc' ? 'desc' : 'asc'">
                                                 Severity
                                                 <span class="text-primary" x-text="findingSortDir === 'asc' ? '↑' : '↓'"></span>
                                             </button>
                                         </th>
-                                        <th>Target Resource</th>
-                                        <th>Risk Context</th>
-                                        <th>Description</th>
+                                        <th class="w-[23%]">Target Resource</th>
+                                        <th class="w-[22%]">Risk Context</th>
+                                        <th class="w-[40%]">Description</th>
+                                        <th class="w-[5%] text-center">Fix</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -637,7 +638,7 @@
                                                 'bg-warning/5 border-l-4 border-warning': finding.severity === 'HIGH',
                                                 'border-l-4 border-info/40': finding.severity === 'MEDIUM'
                                             }">
-                                            <td class="font-mono text-xs whitespace-nowrap">
+                                            <td class="font-mono text-xs whitespace-nowrap text-center">
                                                 <span class="badge badge-sm rounded-sm font-bold uppercase tracking-wider"
                                                     :class="{
                                                         'badge-error': finding.severity === 'CRITICAL',
@@ -647,17 +648,24 @@
                                                     }"
                                                     x-text="finding.severity || 'MEDIUM'"></span>
                                             </td>
-                                            <td class="font-mono text-xs break-words whitespace-normal font-semibold"
+                                            <td class="font-mono text-xs break-all whitespace-normal font-semibold"
                                                 x-text="finding.subject"></td>
-                                            <td class="font-mono text-xs break-words whitespace-normal text-base-content/80"
+                                            <td class="font-mono text-xs break-all whitespace-normal text-base-content/80"
                                                 x-text="finding.role"></td>
                                             <td class="text-xs font-mono break-words whitespace-normal text-base-content/90"
                                                 :class="{'font-semibold': finding.severity === 'CRITICAL'}"
                                                 x-text="finding.risk_description"></td>
+                                            <td class="text-center whitespace-nowrap">
+                                                <button x-show="finding.remediation"
+                                                    @click="openRemediation(finding)"
+                                                    class="btn btn-xs btn-outline btn-accent rounded-sm font-mono uppercase tracking-wider">
+                                                    Fix
+                                                </button>
+                                            </td>
                                         </tr>
                                     </template>
                                     <tr x-show="filteredFindings.length === 0">
-                                        <td colspan="4" class="text-center py-6 text-base-content/60 font-mono text-xs"
+                                        <td colspan="5" class="text-center py-6 text-base-content/60 font-mono text-xs"
                                             x-text="selectedScanFindings.length === 0 ? 'No findings in this scan.' : 'No findings match the selected filter.'"></td>
                                     </tr>
                                 </tbody>
@@ -759,6 +767,7 @@
                                                 <span x-show="rule.dangerous_verbs">Verbs:&nbsp;<span class="text-warning" x-text="rule.dangerous_verbs"></span></span>
                                                 <span x-show="rule.dangerous_resources">Resources:&nbsp;<span class="text-primary" x-text="rule.dangerous_resources"></span></span>
                                                 <span x-show="rule.key">Key:&nbsp;<span class="text-success" x-text="rule.key"></span></span>
+                                                <span x-show="rule.remediation" class="text-accent font-semibold">✓ Remediation</span>
                                             </div>
                                         </td>
                                         <td class="text-center">
@@ -985,6 +994,12 @@
                         class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary"
                         placeholder="spec.containers.securityContext.privileged" />
                 </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-base-content/70 text-xs font-mono uppercase">Remediation</span><span class="label-text-alt text-base-content/40 text-xs font-mono">Markdown / YAML</span></label>
+                    <textarea x-model="ruleForm.remediation" rows="5"
+                        class="textarea textarea-bordered textarea-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono text-xs leading-relaxed"
+                        placeholder="Описание исправления и YAML-патч..."></textarea>
+                </div>
             </div>
 
             <div x-show="ruleModalError" class="mt-3 p-2 bg-error/10 border border-error/30 rounded-sm text-error text-xs font-mono" x-text="ruleModalError"></div>
@@ -998,6 +1013,25 @@
             </div>
         </div>
         <div class="modal-backdrop bg-black/40" @click="ruleModalOpen = false"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         MODAL: Remediation / Fix It
+    ═══════════════════════════════════════════════════════════ -->
+    <div class="modal" :class="{'modal-open': remediationModalOpen}" x-cloak>
+        <div class="modal-box rounded-sm bg-base-200 border border-accent/40 max-w-2xl w-full shadow-[0_0_20px_rgba(0,255,180,0.15)]">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-mono font-bold text-accent uppercase tracking-wider text-base">⚡ Suggested Remediation</h3>
+                <button @click="remediationModalOpen = false" class="btn btn-ghost btn-xs rounded-sm font-mono text-base-content/50">✕ Close</button>
+            </div>
+            <div class="text-xs font-mono text-base-content/50 mb-3 uppercase tracking-wider" x-text="currentRemediationSubject"></div>
+            <div class="bg-gray-950 border border-cyan-700/50 p-4 rounded-sm font-mono text-cyan-400 text-sm whitespace-pre-wrap overflow-y-auto max-h-96 leading-relaxed shadow-inner"
+                x-text="currentRemediationText"></div>
+            <div class="modal-action mt-4">
+                <button @click="remediationModalOpen = false" class="btn btn-outline btn-sm rounded-sm font-mono uppercase border-base-300">Close</button>
+            </div>
+        </div>
+        <div class="modal-backdrop bg-black/60" @click="remediationModalOpen = false"></div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════
@@ -1130,7 +1164,12 @@
                 ruleModalOpen: false,
                 ruleModalMode: 'create',
                 ruleModalError: '',
-                ruleForm: { id: null, description: '', category: 'rbac', severity: 'MEDIUM', dangerous_verbs: '', dangerous_resources: '', key: '' },
+                ruleForm: { id: null, description: '', category: 'rbac', severity: 'MEDIUM', dangerous_verbs: '', dangerous_resources: '', key: '', remediation: '' },
+
+                // ── Remediation modal ──────────────────────────────────────
+                remediationModalOpen: false,
+                currentRemediationText: '',
+                currentRemediationSubject: '',
 
                 // ── Script modal ───────────────────────────────────────────
                 scriptModalOpen: false,
@@ -1657,7 +1696,7 @@
 
                 // ── Rule CRUD ──────────────────────────────────────────────
                 openAddRule() {
-                    this.ruleForm = { id: null, description: '', category: 'rbac', severity: 'MEDIUM', dangerous_verbs: '', dangerous_resources: '', key: '' };
+                    this.ruleForm = { id: null, description: '', category: 'rbac', severity: 'MEDIUM', dangerous_verbs: '', dangerous_resources: '', key: '', remediation: '' };
                     this.ruleModalMode = 'create';
                     this.ruleModalError = '';
                     this.ruleModalOpen = true;
@@ -1672,6 +1711,7 @@
                         dangerous_verbs: rule.dangerous_verbs || '',
                         dangerous_resources: rule.dangerous_resources || '',
                         key: rule.key || '',
+                        remediation: rule.remediation || '',
                     };
                     this.ruleModalMode = 'edit';
                     this.ruleModalError = '';
@@ -1692,6 +1732,7 @@
                             dangerous_verbs: this.ruleForm.dangerous_verbs || null,
                             dangerous_resources: this.ruleForm.dangerous_resources || null,
                             key: this.ruleForm.key || null,
+                            remediation: this.ruleForm.remediation.trim() || null,
                         };
                         const url = this.ruleModalMode === 'create' ? '/rules' : `/rules/${this.ruleForm.id}`;
                         const method = this.ruleModalMode === 'create' ? 'POST' : 'PUT';
@@ -1714,6 +1755,12 @@
                     if (!confirm(`Delete rule #${ruleId}? This cannot be undone.`)) return;
                     await fetch(`/rules/${ruleId}`, { method: 'DELETE' });
                     await this.fetchData();
+                },
+
+                openRemediation(finding) {
+                    this.currentRemediationText = finding.remediation || '';
+                    this.currentRemediationSubject = finding.subject + ' — ' + finding.risk_description.slice(0, 80);
+                    this.remediationModalOpen = true;
                 },
 
                 // ── Script CRUD ────────────────────────────────────────────

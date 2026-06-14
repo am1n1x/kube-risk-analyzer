@@ -36,6 +36,7 @@ def sync_rules_to_db(db: Session, file_path: str = "rules.json"):
             dangerous_verbs=dangerous_verbs,
             dangerous_resources=dangerous_resources,
             severity=rule.get("severity", "MEDIUM"),
+            remediation=rule.get("remediation"),
         )
         db.add(db_rule)
 

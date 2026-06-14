@@ -14,6 +14,7 @@ class RiskRule(Base):
     key = Column(String, nullable=True)
     severity = Column(String, default="MEDIUM")
     is_enabled = Column(Boolean, default=True)
+    remediation = Column(String, nullable=True)
 
 
 class ScanHistory(Base):
@@ -35,6 +36,7 @@ class Finding(Base):
     role = Column(String)
     risk_description = Column(String)
     severity = Column(String, default="MEDIUM")
+    remediation = Column(String, nullable=True)
 
     scan = relationship("ScanHistory", back_populates="findings")
 

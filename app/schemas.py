@@ -13,6 +13,7 @@ class RiskRuleBase(BaseModel):
     key: Optional[str] = None
     severity: str = "MEDIUM"
     is_enabled: bool = True
+    remediation: Optional[str] = None
 
 class RiskRuleCreate(RiskRuleBase):
     pass
@@ -25,6 +26,7 @@ class RiskRuleUpdate(BaseModel):
     key: Optional[str] = None
     severity: Optional[str] = None
     is_enabled: Optional[bool] = None
+    remediation: Optional[str] = None
 
 class RiskRuleSchema(RiskRuleBase):
     id: int
@@ -38,6 +40,7 @@ class FindingBase(BaseModel):
     role: str
     risk_description: str
     severity: str = "MEDIUM"
+    remediation: Optional[str] = None
 
 class FindingCreate(FindingBase):
     pass

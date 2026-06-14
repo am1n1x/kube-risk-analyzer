@@ -5,7 +5,8 @@
         "severity": "HIGH",
         "description": "Чтение секретов (паролей, токенов)",
         "dangerous_verbs": ["get", "list", "watch"],
-        "dangerous_resources": ["secrets"]
+        "dangerous_resources": ["secrets"],
+        "remediation": "Удалите `secrets` из списка ресурсов или ограничьте глаголы. Используйте отдельный ServiceAccount с минимальными правами:\n```yaml\nrules:\n- apiGroups: [\"\"]\n  resources: [\"secrets\"]\n  verbs: [\"get\", \"list\"]  # <-- УДАЛИТЬ ЭТИ ПРАВА\n```"
     },
     {
         "id": "DANGER-002",
@@ -13,7 +14,8 @@
         "severity": "CRITICAL",
         "description": "Полный административный доступ (*)",
         "dangerous_verbs": ["*"],
-        "dangerous_resources": ["*"]
+        "dangerous_resources": ["*"],
+        "remediation": "Замените wildcard-права на явный список минимально необходимых ресурсов и глаголов (принцип least privilege):\n```yaml\n# УДАЛИТЬ:\nrules:\n- apiGroups: [\"*\"]\n  resources: [\"*\"]\n  verbs: [\"*\"]\n# ЗАМЕНИТЬ НА:\nrules:\n- apiGroups: [\"\"]\n  resources: [\"pods\"]\n  verbs: [\"get\", \"list\"]\n```"
     },
     {
         "id": "DANGER-003",
@@ -21,7 +23,8 @@
         "severity": "CRITICAL",
         "description": "Создание подов (риск RCE)",
         "dangerous_verbs": ["create"],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Ограничьте создание подов через PodSecurityAdmission или удалите право create для pods:\n```yaml\nrules:\n- apiGroups: [\"\"]\n  resources: [\"pods\"]\n  verbs: [\"create\"]  # <-- УДАЛИТЬ\n```"
     },
     {
         "id": "DANGER-004",
@@ -29,7 +32,8 @@
         "severity": "CRITICAL",
         "description": "Право на выполнение команд внутри пода (exec)",
         "dangerous_verbs": ["create"],
-        "dangerous_resources": ["pods/exec"]
+        "dangerous_resources": ["pods/exec"],
+        "remediation": "Удалите право на pods/exec. Ограничьте доступ NetworkPolicy и аудитом:\n```yaml\nrules:\n- apiGroups: [\"\"]\n  resources: [\"pods/exec\"]\n  verbs: [\"create\"]  # <-- УДАЛИТЬ\n```"
     },
     {
         "id": "DANGER-005",
@@ -37,7 +41,8 @@
         "severity": "LOW",
         "description": "Доступ к логам подов",
         "dangerous_verbs": ["get", "list", "watch"],
-        "dangerous_resources": ["pods/log"]
+        "dangerous_resources": ["pods/log"],
+        "remediation": "Ограничьте доступ к логам конкретными namespace или переведите логи в централизованную систему (ELK, Loki) с контролем доступа."
     },
     {
         "id": "DANGER-006",
@@ -45,7 +50,8 @@
         "severity": "CRITICAL",
         "description": "Право на изменение прав (escalate/bind)",
         "dangerous_verbs": ["bind", "escalate"],
-        "dangerous_resources": ["roles", "clusterroles"]
+        "dangerous_resources": ["roles", "clusterroles"],
+        "remediation": "Удалите глаголы bind/escalate — они позволяют назначить себе любые права:\n```yaml\nrules:\n- apiGroups: [\"rbac.authorization.k8s.io\"]\n  resources: [\"roles\", \"clusterroles\"]\n  verbs: [\"bind\", \"escalate\"]  # <-- УДАЛИТЬ\n```"
     },
     {
         "id": "DANGER-007",
@@ -53,7 +59,8 @@
         "severity": "HIGH",
         "description": "Доступ к управлению узлами (nodes)",
         "dangerous_verbs": ["create", "update", "patch", "delete", "get", "list", "watch"],
-        "dangerous_resources": ["nodes"]
+        "dangerous_resources": ["nodes"],
+        "remediation": "Ограничьте доступ к nodes только операциями чтения для мониторинга. Удалите write-глаголы (create, update, patch, delete)."
     },
     {
         "id": "DANGER-008",
@@ -62,7 +69,8 @@
         "description": "Контейнер в привилегированном режиме (Privileged)",
         "key": "spec.containers.securityContext.privileged",
         "dangerous_verbs": [],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Отключите привилегированный режим в securityContext контейнера:\n```yaml\nspec:\n  containers:\n  - name: my-container\n    securityContext:\n      privileged: false\n      allowPrivilegeEscalation: false\n      runAsNonRoot: true\n      runAsUser: 1000\n```"
     },
     {
         "id": "DANGER-009",
@@ -71,7 +79,8 @@
         "description": "Использование хостовой сети (HostNetwork)",
         "key": "spec.hostNetwork",
         "dangerous_verbs": [],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Удалите `hostNetwork: true` из спецификации пода или явно установите `false`:\n```yaml\nspec:\n  hostNetwork: false  # или удалите эту строку\n  containers:\n  - name: my-container\n    ...\n```"
     },
     {
         "id": "DANGER-010",
@@ -80,7 +89,8 @@
         "description": "Монтирование хостовой директории (hostPath)",
         "key": "spec.volumes.hostPath",
         "dangerous_verbs": [],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Замените hostPath на PersistentVolumeClaim или emptyDir:\n```yaml\nspec:\n  volumes:\n  # УДАЛИТЬ:\n  # - name: host-vol\n  #   hostPath:\n  #     path: /etc\n  # ЗАМЕНИТЬ НА:\n  - name: data-vol\n    emptyDir: {}\n```"
     },
     {
         "id": "DANGER-011",
@@ -88,7 +98,8 @@
         "severity": "MEDIUM",
         "description": "Сервис открыт наружу через NodePort (риск прямого доступа к портам узла)",
         "dangerous_verbs": [],
-        "dangerous_resources": ["services"]
+        "dangerous_resources": ["services"],
+        "remediation": "Замените NodePort на ClusterIP и используйте Ingress-контроллер для внешнего доступа:\n```yaml\nspec:\n  type: ClusterIP  # было: NodePort\n  ports:\n  - port: 80\n    targetPort: 8080\n```"
     },
     {
         "id": "DANGER-012",
@@ -96,7 +107,8 @@
         "severity": "MEDIUM",
         "description": "Сервис открыт наружу через LoadBalancer (публичный IP)",
         "dangerous_verbs": [],
-        "dangerous_resources": ["services"]
+        "dangerous_resources": ["services"],
+        "remediation": "Добавьте аннотации для ограничения доступа или используйте internal LoadBalancer:\n```yaml\nmetadata:\n  annotations:\n    # AWS:\n    service.beta.kubernetes.io/aws-load-balancer-internal: \"true\"\n    # GCP:\n    networking.gke.io/load-balancer-type: \"Internal\"\n```"
     },
     {
         "id": "DANGER-013",
@@ -104,7 +116,8 @@
         "severity": "CRITICAL",
         "description": "КРИТИЧЕСКАЯ УГРОЗА: База данных выставлена в интернет",
         "dangerous_verbs": [],
-        "dangerous_resources": ["services"]
+        "dangerous_resources": ["services"],
+        "remediation": "Немедленно переведите сервис БД в ClusterIP и закройте внешний доступ. Используйте NetworkPolicy:\n```yaml\n# 1. Смените тип сервиса:\nspec:\n  type: ClusterIP\n# 2. Добавьте NetworkPolicy:\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: db-deny-external\nspec:\n  podSelector:\n    matchLabels:\n      app: database\n  ingress:\n  - from:\n    - podSelector:\n        matchLabels:\n          role: backend\n```"
     },
     {
         "id": "DANGER-014",
@@ -112,7 +125,8 @@
         "severity": "CRITICAL",
         "description": "Право на имперсонацию (повышение привилегий)",
         "dangerous_verbs": ["impersonate"],
-        "dangerous_resources": ["users", "groups", "serviceaccounts"]
+        "dangerous_resources": ["users", "groups", "serviceaccounts"],
+        "remediation": "Удалите право impersonate — оно позволяет действовать от имени любого пользователя:\n```yaml\nrules:\n- apiGroups: [\"\"]\n  resources: [\"users\", \"groups\", \"serviceaccounts\"]\n  verbs: [\"impersonate\"]  # <-- УДАЛИТЬ\n```"
     },
     {
         "id": "DANGER-015",
@@ -120,7 +134,8 @@
         "severity": "HIGH",
         "description": "Право на проброс портов (port-forward) — обход сетевых политик",
         "dangerous_verbs": ["create"],
-        "dangerous_resources": ["pods/portforward"]
+        "dangerous_resources": ["pods/portforward"],
+        "remediation": "Удалите право pods/portforward или ограничьте его конкретным namespace:\n```yaml\nrules:\n- apiGroups: [\"\"]\n  resources: [\"pods/portforward\"]\n  verbs: [\"create\"]  # <-- УДАЛИТЬ или ограничить namespace\n```"
     },
     {
         "id": "DANGER-016",
@@ -128,7 +143,8 @@
         "severity": "CRITICAL",
         "description": "Генерация токенов ServiceAccount (кража личности)",
         "dangerous_verbs": ["create"],
-        "dangerous_resources": ["serviceaccounts/token"]
+        "dangerous_resources": ["serviceaccounts/token"],
+        "remediation": "Удалите право создавать токены ServiceAccount. Используйте Bound Service Account Tokens с TTL:\n```yaml\nrules:\n- apiGroups: [\"\"]\n  resources: [\"serviceaccounts/token\"]\n  verbs: [\"create\"]  # <-- УДАЛИТЬ\n```"
     },
     {
         "id": "DANGER-017",
@@ -137,7 +153,8 @@
         "description": "Разрешена эскалация привилегий в контейнере (allowPrivilegeEscalation)",
         "key": "spec.containers.securityContext.allowPrivilegeEscalation",
         "dangerous_verbs": [],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Явно запретите эскалацию привилегий:\n```yaml\nspec:\n  containers:\n  - name: my-container\n    securityContext:\n      allowPrivilegeEscalation: false\n      runAsNonRoot: true\n```"
     },
     {
         "id": "DANGER-018",
@@ -146,7 +163,8 @@
         "description": "Доступ к процессам хоста (hostPID) — риск побега из контейнера",
         "key": "spec.hostPID",
         "dangerous_verbs": [],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Удалите `hostPID: true` из спецификации пода:\n```yaml\nspec:\n  hostPID: false  # или удалите строку\n  containers:\n  - name: my-container\n    ...\n```"
     },
     {
         "id": "DANGER-019",
@@ -155,7 +173,8 @@
         "description": "Доступ к межпроцессному взаимодействию хоста (hostIPC)",
         "key": "spec.hostIPC",
         "dangerous_verbs": [],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Удалите `hostIPC: true` из спецификации пода:\n```yaml\nspec:\n  hostIPC: false  # или удалите строку\n```"
     },
     {
         "id": "DANGER-020",
@@ -164,6 +183,7 @@
         "description": "Добавление дополнительных Linux Capabilities (опасность расширения привилегий)",
         "key": "spec.containers.securityContext.capabilities.add",
         "dangerous_verbs": [],
-        "dangerous_resources": ["pods"]
+        "dangerous_resources": ["pods"],
+        "remediation": "Удалите дополнительные capabilities и явно сбросьте все:\n```yaml\nspec:\n  containers:\n  - name: my-container\n    securityContext:\n      capabilities:\n        drop: [\"ALL\"]  # сбросить всё\n        # add: [...]   # <-- УДАЛИТЬ или оставить только необходимые\n```"
     }
 ]

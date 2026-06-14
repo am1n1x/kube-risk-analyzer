@@ -536,6 +536,7 @@ def scan_offline(
             role=finding_data["role"],
             risk_description=finding_data["risk_description"],
             severity=finding_data.get("severity", "MEDIUM"),
+            remediation=finding_data.get("remediation"),
         ))
 
     for pod in pods:
@@ -548,27 +549,39 @@ def scan_offline(
         workload_dangers = analyze_pod_workload(pod, workload_rules)
         sa_rbac_dangers = get_sa_rbac_dangers(sa_name, pod_ns, bindings, roles, cluster_roles, rbac_rules)
 
-        for danger_desc, danger_sev in workload_dangers:
+        for danger_desc, danger_sev, danger_rem in workload_dangers:
             db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=images,
                 risk_description=danger_desc,
                 severity=danger_sev,
+                remediation=danger_rem,
             ))
             findings_count += 1
 
         if workload_dangers and sa_rbac_dangers:
+            workload_rem = next((r for _, _, r in workload_dangers if r), None)
+            rbac_rem = next((r for _, _, r in sa_rbac_dangers if r), None)
+            chain_rem = None
+            if workload_rem or rbac_rem:
+                parts = []
+                if workload_rem:
+                    parts.append(f"### Workload Fix\n{workload_rem}")
+                if rbac_rem:
+                    parts.append(f"### RBAC Fix\n{rbac_rem}")
+                chain_rem = "\n\n".join(parts)
             db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {pod_name}",
                 role=f"SA:{sa_name} | images: {images}",
                 risk_description=(
-                    f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(d for d, _ in workload_dangers)}) "
+                    f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(d for d, _, __ in workload_dangers)}) "
                     f"and its ServiceAccount '{sa_name}' has dangerous RBAC rights "
-                    f"({', '.join(d for d, _ in sa_rbac_dangers)})"
+                    f"({', '.join(d for d, _, __ in sa_rbac_dangers)})"
                 ),
                 severity="CRITICAL",
+                remediation=chain_rem,
             ))
             findings_count += 1
 
@@ -579,6 +592,7 @@ def scan_offline(
             role=net_f["role"],
             risk_description=net_f["risk_description"],
             severity=net_f.get("severity", "MEDIUM"),
+            remediation=net_f.get("remediation"),
         ))
         findings_count += 1
 
@@ -699,6 +713,7 @@ def scan_live(
             role=f["role"],
             risk_description=f["risk_description"],
             severity=f.get("severity", "MEDIUM"),
+            remediation=f.get("remediation"),
         ))
 
     # Workload scan + SA RBAC correlation
@@ -712,27 +727,39 @@ def scan_live(
         workload_dangers = analyze_pod_workload(pod, workload_rules)
         sa_rbac_dangers = get_sa_rbac_dangers(sa_name, p_ns, all_bindings, roles, cluster_roles, rbac_rules)
 
-        for danger_desc, danger_sev in workload_dangers:
+        for danger_desc, danger_sev, danger_rem in workload_dangers:
             db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {p_name}",
                 role=images,
                 risk_description=danger_desc,
                 severity=danger_sev,
+                remediation=danger_rem,
             ))
             findings_count += 1
 
         if workload_dangers and sa_rbac_dangers:
+            workload_rem = next((r for _, _, r in workload_dangers if r), None)
+            rbac_rem = next((r for _, _, r in sa_rbac_dangers if r), None)
+            chain_rem = None
+            if workload_rem or rbac_rem:
+                parts = []
+                if workload_rem:
+                    parts.append(f"### Workload Fix\n{workload_rem}")
+                if rbac_rem:
+                    parts.append(f"### RBAC Fix\n{rbac_rem}")
+                chain_rem = "\n\n".join(parts)
             db.add(models.Finding(
                 scan_id=scan.id,
                 subject=f"Pod: {p_name}",
                 role=f"SA:{sa_name} | images: {images}",
                 risk_description=(
-                    f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(d for d, _ in workload_dangers)}) "
+                    f"CRITICAL CHAIN: Pod is vulnerable ({', '.join(d for d, _, __ in workload_dangers)}) "
                     f"and its ServiceAccount '{sa_name}' has dangerous RBAC rights "
-                    f"({', '.join(d for d, _ in sa_rbac_dangers)})"
+                    f"({', '.join(d for d, _, __ in sa_rbac_dangers)})"
                 ),
                 severity="CRITICAL",
+                remediation=chain_rem,
             ))
             findings_count += 1
 
@@ -745,6 +772,7 @@ def scan_live(
                 role=net_f["role"],
                 risk_description=net_f["risk_description"],
                 severity=net_f.get("severity", "MEDIUM"),
+                remediation=net_f.get("remediation"),
             ))
             findings_count += 1
 
