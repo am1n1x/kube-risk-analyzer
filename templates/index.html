@@ -172,10 +172,78 @@
                                 <div class="flex flex-col gap-3 mt-5">
 
                                     <!-- Offline scan -->
-                                    <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full" @click="runOfflineScan()" :disabled="loading">
-                                        <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
-                                        Run Offline Scan (YAML)
-                                    </button>
+                                    <div class="border border-base-300 rounded-sm p-3 flex flex-col gap-2">
+                                        <span class="text-xs font-mono text-base-content/50 uppercase tracking-wider">Offline Scan (YAML)</span>
+                                        <div class="flex gap-2">
+                                            <select x-model="selectedDumpFile"
+                                                class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content flex-1 focus:border-primary font-mono min-w-0">
+                                                <option value="">— select dump file —</option>
+                                                <template x-for="f in dumpFiles" :key="f">
+                                                    <option :value="f" x-text="f"></option>
+                                                </template>
+                                            </select>
+                                            <button class="btn btn-ghost btn-sm rounded-sm text-base-content/60 hover:text-primary border border-base-300 px-2" @click="fetchDumps()" title="Refresh file list">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                            </button>
+                                        </div>
+                                        <p x-show="dumpFiles.length === 0" class="text-xs font-mono text-base-content/40">No dump files found. Generate one below.</p>
+                                        <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary w-full"
+                                            @click="runOfflineScan()" :disabled="loading || !selectedDumpFile">
+                                            <span x-show="loading" class="loading loading-spinner rounded-sm"></span>
+                                            <span x-text="selectedDumpFile ? 'Scan: ' + selectedDumpFile : 'Run Offline Scan'"></span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Generate dump -->
+                                    <div class="border border-base-300 rounded-sm p-3 flex flex-col gap-2">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-xs font-mono text-base-content/50 uppercase tracking-wider">Generate Dump</span>
+                                            <span x-show="clusterPodsSource === 'live'" class="text-xs font-mono text-success">● Live</span>
+                                            <span x-show="clusterPodsSource === 'unavailable'" class="text-xs font-mono text-warning">○ No cluster</span>
+                                        </div>
+                                        <div class="form-control w-full">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs font-mono text-base-content/60 uppercase tracking-wider">Namespace</span>
+                                                <span class="label-text-alt text-xs font-mono text-base-content/35">optional</span>
+                                            </label>
+                                            <select x-show="clusterPodsSource === 'live'"
+                                                x-model="dumpNamespace" @change="dumpPodName = ''"
+                                                class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono">
+                                                <option value="">— All namespaces —</option>
+                                                <template x-for="ns in basNamespaces" :key="ns">
+                                                    <option :value="ns" x-text="ns"></option>
+                                                </template>
+                                            </select>
+                                            <input x-show="clusterPodsSource !== 'live'"
+                                                type="text" x-model="dumpNamespace"
+                                                class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono"
+                                                placeholder="All namespaces" />
+                                        </div>
+                                        <div class="form-control w-full">
+                                            <label class="label py-0.5">
+                                                <span class="label-text text-xs font-mono text-base-content/60 uppercase tracking-wider">Pod</span>
+                                                <span class="label-text-alt text-xs font-mono text-base-content/35">optional</span>
+                                            </label>
+                                            <select x-show="clusterPodsSource === 'live'"
+                                                x-model="dumpPodName" :disabled="!dumpNamespace"
+                                                class="select select-bordered select-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono disabled:opacity-50">
+                                                <option value="" x-text="dumpNamespace ? '— All pods —' : '— Select namespace first —'"></option>
+                                                <template x-for="pod in dumpPodsForNs" :key="pod.name">
+                                                    <option :value="pod.name"
+                                                        x-text="pod.name + (pod.phase !== 'Running' ? ' [' + pod.phase + ']' : '')"></option>
+                                                </template>
+                                            </select>
+                                            <input x-show="clusterPodsSource !== 'live'"
+                                                type="text" x-model="dumpPodName"
+                                                class="input input-bordered input-sm rounded-sm border-base-300 bg-base-100 text-base-content w-full focus:border-primary font-mono"
+                                                placeholder="All pods" />
+                                        </div>
+                                        <button class="btn btn-outline btn-sm rounded-sm text-secondary border-secondary/50 hover:bg-secondary/10 hover:border-secondary w-full mt-1"
+                                            @click="generateDump()" :disabled="dumpLoading">
+                                            <span x-show="dumpLoading" class="loading loading-spinner rounded-sm"></span>
+                                            <span x-text="dumpPodName ? 'Dump Pod: ' + dumpPodName : (dumpNamespace ? 'Dump Namespace: ' + dumpNamespace : 'Generate Full Cluster Dump')"></span>
+                                        </button>
+                                    </div>
 
                                     <!-- Live scan with optional scope -->
                                     <div class="border border-base-300 rounded-sm p-3 flex flex-col gap-2">
@@ -767,6 +835,13 @@
                 liveScanNamespace: '',
                 liveScanPodName: '',
 
+                // ── Dump management ────────────────────────────────────────
+                dumpFiles: [],
+                selectedDumpFile: '',
+                dumpNamespace: '',
+                dumpPodName: '',
+                dumpLoading: false,
+
                 // ── KB filter / sort ───────────────────────────────────────
                 kbSearch: '',
                 kbCategoryFilter: '',
@@ -926,6 +1001,17 @@
                         });
                 },
 
+                get dumpPodsForNs() {
+                    if (this.clusterPodsSource !== 'live' || !this.dumpNamespace) return [];
+                    return this.clusterPods
+                        .filter(p => p.namespace === this.dumpNamespace)
+                        .sort((a, b) => {
+                            if (a.phase === 'Running' && b.phase !== 'Running') return -1;
+                            if (a.phase !== 'Running' && b.phase === 'Running') return 1;
+                            return a.name.localeCompare(b.name);
+                        });
+                },
+
                 sevCount(sev) {
                     return this.selectedScanFindings.filter(f => f.severity === sev).length;
                 },
@@ -956,6 +1042,7 @@
                         const podsData = await podsRes.json();
                         this.clusterPods = podsData.pods || [];
                         this.clusterPodsSource = podsData.source || 'unavailable';
+                        await this.fetchDumps();
                         this.scripts = await scriptsRes.json();
                     } catch (e) {
                         console.error('Failed to fetch data', e);
@@ -968,14 +1055,44 @@
                 },
 
                 // ── Scan actions ───────────────────────────────────────────
+                async fetchDumps() {
+                    try {
+                        const res = await fetch('/dumps');
+                        this.dumpFiles = await res.json();
+                        if (this.dumpFiles.length && !this.selectedDumpFile)
+                            this.selectedDumpFile = this.dumpFiles[0];
+                    } catch (e) { this.dumpFiles = []; }
+                },
+
+                async generateDump() {
+                    this.dumpLoading = true;
+                    try {
+                        const params = new URLSearchParams();
+                        if (this.dumpNamespace) params.append('namespace', this.dumpNamespace);
+                        if (this.dumpPodName) params.append('pod_name', this.dumpPodName);
+                        const qs = params.toString();
+                        const res = await fetch('/dump/live' + (qs ? '?' + qs : ''), { method: 'POST' });
+                        if (!res.ok) throw new Error(await res.text());
+                        const data = await res.json();
+                        await this.fetchDumps();
+                        this.selectedDumpFile = data.filename;
+                    } catch (e) {
+                        alert('Dump failed: ' + e);
+                    } finally {
+                        this.dumpLoading = false;
+                    }
+                },
+
                 async runOfflineScan() {
                     this.loading = true;
                     try {
-                        const res = await fetch('/scan/offline', { method: 'POST' });
-                        if (res.ok) await this.fetchData();
+                        const qs = this.selectedDumpFile ? '?filename=' + encodeURIComponent(this.selectedDumpFile) : '';
+                        const res = await fetch('/scan/offline' + qs, { method: 'POST' });
+                        if (!res.ok) throw new Error(await res.text());
+                        await this.fetchData();
                         this.activeTab = 'history';
                     } catch (e) {
-                        alert('Scan failed');
+                        alert('Scan failed: ' + e);
                     } finally {
                         this.loading = false;
                     }

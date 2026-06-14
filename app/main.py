@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import os
+from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, Request, Body, Query
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -16,10 +18,26 @@ models.Base.metadata.create_all(bind=engine)
 
 templates = Jinja2Templates(directory="templates")
 
+DUMPS_DIR = "dumps"
+os.makedirs(DUMPS_DIR, exist_ok=True)
+
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
 
 def _severity_key(finding):
     return _SEVERITY_ORDER.get(getattr(finding, "severity", "MEDIUM"), 2)
+
+
+def _write_dump(items: list, prefix: str) -> str:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{prefix}_{ts}.yaml"
+    path = os.path.join(DUMPS_DIR, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(
+            {"apiVersion": "v1", "kind": "List", "items": items},
+            f, allow_unicode=True, default_flow_style=False,
+        )
+    return filename
 
 
 @asynccontextmanager
@@ -65,6 +83,55 @@ def get_cluster_pod_list():
         return {"pods": pods, "source": "live"}
     except Exception as e:
         return {"pods": [], "source": "unavailable", "error": str(e)}
+
+
+@app.get("/dumps")
+def list_dumps():
+    files = sorted(
+        [f for f in os.listdir(DUMPS_DIR) if f.endswith((".yaml", ".yml"))],
+        reverse=True,
+    ) if os.path.exists(DUMPS_DIR) else []
+    if os.path.exists("cluster_dump.yaml") and "cluster_dump.yaml" not in files:
+        files.append("cluster_dump.yaml")
+    return files
+
+
+@app.post("/dump/live")
+def dump_live(
+    namespace: str | None = Query(default=None),
+    pod_name: str | None = Query(default=None),
+):
+    try:
+        k8s_data = get_live_k8s_data()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Failed to connect to K8s: {e}")
+
+    pods = k8s_data.get("pods", [])
+    services = k8s_data.get("services", [])
+    roles = k8s_data.get("roles", [])
+    cluster_roles = k8s_data.get("cluster_roles", [])
+    role_bindings = k8s_data.get("role_bindings", [])
+    cluster_role_bindings = k8s_data.get("cluster_role_bindings", [])
+
+    if namespace:
+        pods = [p for p in pods if p.get("metadata", {}).get("namespace") == namespace]
+        services = [s for s in services if s.get("metadata", {}).get("namespace") == namespace]
+        roles = [r for r in roles if r.get("metadata", {}).get("namespace") == namespace]
+        role_bindings = [b for b in role_bindings if b.get("metadata", {}).get("namespace") == namespace]
+    if pod_name:
+        pods = [p for p in pods if p.get("metadata", {}).get("name") == pod_name]
+
+    items = pods + services + roles + cluster_roles + role_bindings + cluster_role_bindings
+
+    if pod_name and namespace:
+        prefix = f"pod_{namespace}_{pod_name}"
+    elif namespace:
+        prefix = f"ns_{namespace}"
+    else:
+        prefix = "cluster"
+
+    filename = _write_dump(items, prefix)
+    return {"filename": filename, "items_count": len(items)}
 
 
 # ── Rules CRUD ────────────────────────────────────────────────────────────────
@@ -124,13 +191,32 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
 # ── Offline scan ──────────────────────────────────────────────────────────────
 
 @app.post("/scan/offline")
-def scan_offline(db: Session = Depends(get_db)):
-    scan = models.ScanHistory(target_name="cluster_dump.yaml")
+def scan_offline(
+    filename: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    if filename:
+        safe = os.path.basename(filename)
+        path_in_dumps = os.path.join(DUMPS_DIR, safe)
+        if os.path.exists(path_in_dumps):
+            filepath = path_in_dumps
+        elif os.path.exists(safe):
+            filepath = safe
+        else:
+            raise HTTPException(status_code=404, detail=f"Dump file not found: {safe}")
+        target_name = safe
+    else:
+        filepath = "cluster_dump.yaml"
+        target_name = "cluster_dump.yaml"
+        if not os.path.exists(filepath):
+            raise HTTPException(status_code=404, detail="No dump file found. Generate one first.")
+
+    scan = models.ScanHistory(target_name=target_name)
     db.add(scan)
     db.commit()
     db.refresh(scan)
 
-    with open("cluster_dump.yaml", "r", encoding="utf-8") as f:
+    with open(filepath, "r", encoding="utf-8") as f:
         docs = yaml.safe_load_all(f)
         items = []
         for doc in docs:

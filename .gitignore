@@ -58,6 +58,8 @@ htmlcov/
 unpacked
 vkr.docx
 cluster_dump.yaml
+*.yaml
+*.yml
 
 *.db-wal
 *.db-shm
