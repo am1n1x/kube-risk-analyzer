@@ -8,6 +8,7 @@ import tempfile
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Request, Body, Query
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
@@ -128,6 +129,7 @@ async def lifespan(app: FastAPI):
         db.close()
 
 app = FastAPI(title="Kube Risk Analyzer API", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 # ── Utility ───────────────────────────────────────────────────────────────────

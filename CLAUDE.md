@@ -233,6 +233,7 @@ All blocked admissions are visible in History & Reports with `target_name` start
 
 #### 12. Tech Stack & Frontend Design
 - **Backend**: Python 3.10+, FastAPI, SQLAlchemy 2.0, Pydantic V2, K8s Python Client (`kubernetes`), PyYAML, Alembic. Additional stdlib: `csv`, `io`, `json`, `os`, `datetime`, `sqlite3`, `tempfile`.
+- `app/static/` is served at `/static` via FastAPI `StaticFiles` mount (`app.mount("/static", StaticFiles(directory="app/static"), name="static")`). This enables offline air-gapped use of vendored JS/CSS.
 - **Database**: SQLite with WAL mode. Four tables: `risk_rules`, `scan_history`, `findings`, `bas_scripts`.
 - **Frontend**: Zero-build SPA using Alpine.js + Tailwind CSS + DaisyUI (CDN in dev; vendored in `app/static/` for air-gapped use).
 - **Hash Routing**: Client-side navigation uses `window.location.hash` as the single source of truth. On `init()`, the active tab is read from the hash (default: `dashboard`). A `hashchange` listener updates `activeTab` on browser Back/Forward. A `$watch('activeTab', ...)` syncs the hash on any programmatic tab change (e.g., after a scan finishes). Sidebar `<a>` tags use `href="#tab"` instead of `@click` handlers. Valid tab values: `dashboard`, `control`, `history`, `kb`. Individual scan reports are deep-linkable via `#history/{scan_id}` (e.g., `#history/42`): opening a scan sets `window.location.hash = 'history/{id}'` via `$watch('viewingScan')`; the Back button returns to `#history`; a direct link loads the report after `fetchData()` completes. The `hashchange` handler guards against re-fetching an already-open scan (`scanId !== this.viewingScan`). `$watch('activeTab')` accounts for an existing `viewingScan` when switching to the history tab (e.g., via `goToScan()`).
@@ -253,15 +254,16 @@ All blocked admissions are visible in History & Reports with `target_name` start
 - `selectedScanFindings`, `viewingScan`, `findingFilter`, `findingSearch`, `findingSortDir` — scan detail view
 - `backupNotif: ''` — inline toast for backup status (auto-dismisses after 4s)
 - `remediationModalOpen: false`, `currentRemediationText: ''`, `currentRemediationSubject: ''` — "Fix It" remediation modal state
+- `graphModalOpen: false`, `graphNetworkInstance: null` — Attack Path Graph modal (vis-network instance; destroyed on close to free canvas memory)
 - `ruleForm: { id, description, category, severity, dangerous_verbs, dangerous_resources, key, remediation }` — includes `remediation` field
 - Computed getters: `filteredFindings`, `filteredRules`, `dashPods` (includes `lastScanId`), `dashTargets`, `filteredDashPods`, `filteredDashTargets`, `filteredScans`, `basNamespaces`, `basPodsForNs`, `liveScanPodsForNs`, `dumpPodsForNs`
 - Helper methods: `scanModule(targetName)` → `'BAS'|'LIVE'|'CSPM'`, `scanMaxSev(findings)`, `scanBadgeCls(findings)`
-- Action methods: `init()`, `fetchData()`, `fetchScripts()`, `fetchDumps()`, `generateDump()`, `runOfflineScan()`, `runLiveScan()`, `runBas()`, `goToScan(scanId)`, `fetchScanDetails(scanId)`, `deleteScan(scanId)`, `exportScan(format)`, `saveRule()`, `deleteRule(ruleId)`, `saveScript()`, `deleteScript(scriptId)`, `toggleRule(rule)`, `downloadBackup()`, `serverBackup()`, `openRemediation(finding)`
+- Action methods: `init()`, `fetchData()`, `fetchScripts()`, `fetchDumps()`, `generateDump()`, `runOfflineScan()`, `runLiveScan()`, `runBas()`, `goToScan(scanId)`, `fetchScanDetails(scanId)`, `deleteScan(scanId)`, `exportScan(format)`, `saveRule()`, `deleteRule(ruleId)`, `saveScript()`, `deleteScript(scriptId)`, `toggleRule(rule)`, `downloadBackup()`, `serverBackup()`, `openRemediation(finding)`, `renderAttackGraph(finding)`
 
 **Frontend tabs:**
 1. **Dashboard** — stat boxes + "Pods & Workloads" table (live status, finding counts, per-pod toggle, sort/filter, `→` navigation to last scan) + "Scan Targets" table (sort/filter, `→` navigation)
 2. **Control Panel** — Offline Scan (file selector + generate dump); Live Scan (namespace/pod scope dropdowns); BAS form; Custom BAS Scripts management
-3. **History & Reports** — scan history table (sort by all columns, filter by text/module); click View → findings detail with keyword search + severity filter + export buttons (JSON/CSV/Markdown/SARIF). Findings table uses percentage-based column widths (`w-[10%]`/`w-[23%]`/`w-[22%]`/`w-[40%]`/`w-[5%]`) and `break-all whitespace-normal` on subject/role cells to handle long K8s resource names. Each finding row has a "Fix" button (shown only when `finding.remediation` exists) that opens the remediation modal.
+3. **History & Reports** — scan history table (sort by all columns, filter by text/module); click View → findings detail with keyword search + severity filter + export buttons (JSON/CSV/Markdown/SARIF). Findings table uses percentage-based column widths (`w-[10%]`/`w-[23%]`/`w-[22%]`/`w-[40%]`/`w-[5%]`) and `break-all whitespace-normal` on subject/role cells to handle long K8s resource names. Each finding row has a "Fix" button (shown only when `finding.remediation` exists) that opens the remediation modal, and a "Graph" button (shown for CRITICAL CHAIN and NodePort/LoadBalancer findings) that opens the **Attack Path Graph** modal powered by vis-network.
 4. **Detection Rules** (formerly "Knowledge Base") — sortable/filterable table (by #, category, severity; search by description); inline edit/delete per row; toggle switch in "Enabled" column (`opacity-40` on disabled rows); `✓ Remediation` badge shown when rule has remediation text; `remediation` textarea in edit modal.
 
 **Sidebar Database section**: "Download Backup" button (`GET /db/backup/download`) and "Server Backup" button (`POST /db/backup/server`) with inline `backupNotif` toast.
@@ -284,7 +286,7 @@ All blocked admissions are visible in History & Reports with `target_name` start
 - `dumps/`: Generated YAML dumps from live cluster. Files named `{prefix}_{YYYYMMDD_HHMMSS}.yaml`. `.gitignore` excludes yaml files, `.gitkeep` tracks the folder.
 - `backups/`: Server-side database backups. `.gitignore` excludes all files here.
 - `templates/index.html`: The entire frontend SPA (single file, ~1650 lines).
-- `app/static/`: Vendored CSS/JS assets for offline mode (Tailwind, DaisyUI, Alpine, ChartJS).
+- `app/static/`: Vendored CSS/JS assets for offline mode (Tailwind, DaisyUI, Alpine, ChartJS). **`app/static/js/vis-network.min.js`** — vendored vis-network 9.1.9 standalone build for offline Attack Path Graph rendering.
 
 **Instructions for the AI:**
 Adhere strictly to FastAPI dependency injection (`Depends(get_db)`). Ensure frontend changes utilize Alpine.js directives cleanly without breaking the SPA reactivity or the cyberpunk UI style. When adding endpoints, include them in the Endpoints Reference table above. When modifying Alpine.js state, update the state listing in section 12. When adding new columns to models, create a new Alembic migration — never call `create_all()`. Scanner functions must return 3-tuples `(description, severity, remediation)` — do not regress to 2-tuples.
