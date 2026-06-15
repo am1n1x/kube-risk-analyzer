@@ -11,8 +11,10 @@ Objective: Reduce False Positives in security alerts by proving misconfiguration
 - **Database over Hardcode**: Security rules are in `rules.json` and synced to the `RiskRule` SQLite table **only on first startup** (when the `risk_rules` table is empty). Rules are never overwritten on restart — edit `rules.json` and clear the table to re-seed.
 - **Air-Gapped Ready (Vendoring)**: The frontend works completely offline. ALL JS/CSS assets are vendored in `app/static/`. Do NOT introduce CDN links — no external internet is available at runtime. Vendored files: `css/daisyui.min.css`, `js/tailwindcss.js`, `js/alpine.min.js`, `js/chart.js`, `js/vis-network.min.js`.
 - **SQLite WAL Mode**: To support concurrent async reads/writes, WAL (Write-Ahead Logging) mode is explicitly enabled in `database.py` via SQLAlchemy pool events. Also enables `PRAGMA foreign_keys=ON`.
+- **Relative DB path**: The SQLite file lives at `data/kube_risk.db` relative to the CWD. `database.py` calls `os.makedirs("data", exist_ok=True)` at import time so the directory is always present. In Docker the CWD is `/workspace`, so the absolute path is `/workspace/data/kube_risk.db`, which is where the `hostPath` volume is mounted.
 - **Alembic Migrations**: Schema changes are managed exclusively via Alembic (`alembic upgrade head`). `models.Base.metadata.create_all()` is NOT called anywhere. There are currently **two** migration files: `2528ca9dd5f1` (initial 4 tables) and `c93e831e5815` (auth tables: `users`, `sessions`). When adding a new migration, always run `alembic revision --autogenerate` and verify the generated upgrade body is non-empty.
 - **Authentication on every protected endpoint**: All API endpoints except `GET /`, `GET /health`, and `POST /admission/validate` require a valid session cookie (`kra_session`). Always add `_: models.User = Depends(get_current_user)` to new endpoints. The admission webhook is exempt because it is called by the K8s API server, not a browser.
+- **Autonomous scanning**: A daemon thread (`_k8s_watcher_thread`) streams K8s pod `ADDED` events and automatically scans each new pod outside system namespaces. Results appear as `"Auto-Scan (Event): ns/pod"` entries in History. The frontend polls `/scans` every 5 seconds when the browser tab is visible, so new auto-scans appear without page reload.
 
 #### 3. Database Schema (SQLAlchemy ORM — `app/models.py`)
 
@@ -36,7 +38,7 @@ The database has **6 tables** total.
 |---|---|---|
 | `id` | Integer, PK, indexed | Auto-increment |
 | `scan_date` | DateTime | Default: `datetime.now(timezone.utc)` |
-| `target_name` | String | `"cluster_dump.yaml"` / `"Live Cluster"` / `"Live Namespace: {ns}"` / `"Live Pod: {ns}/{pod}"` / `"BAS Simulation: {ns}/{pod} [{script}]"` / `"Admission Blocked: {kind} {ns}/{name}"` |
+| `target_name` | String | `"cluster_dump.yaml"` / `"Live Cluster"` / `"Live Namespace: {ns}"` / `"Live Pod: {ns}/{pod}"` / `"BAS Simulation: {ns}/{pod} [{script}]"` / `"Admission Blocked: {kind} {ns}/{name}"` / `"Auto-Scan (Event): {ns}/{pod}"` |
 | `findings` | relationship | One-to-many → `Finding`, cascade delete |
 
 **`Finding`** (`findings` table):
@@ -190,7 +192,59 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> models.
 ```
 Applied to **all** endpoints except `GET /`, `GET /health`, `POST /admission/validate`.
 
-#### 8. Endpoints Reference (`app/main.py`)
+#### 7d. Autonomous K8s Event Watcher (`app/main.py`)
+
+A daemon thread that reacts to live cluster events in real time, running independently of API requests.
+
+**Entry points:**
+- `start_k8s_watcher()` — creates a `threading.Thread(target=_k8s_watcher_thread, daemon=True)` and starts it. Called once in `lifespan` after `sync_rules_to_db()`.
+- `_k8s_watcher_thread()` — the thread body. Opens its own `SessionLocal()` DB session.
+
+**Config loading sequence** (inside the thread, before any client is created):
+1. `config.load_kube_config()` — tries `~/.kube/config` (local dev / Minikube).
+2. On `ConfigException` or `FileNotFoundError` → falls back to `config.load_incluster_config()` (in-pod).
+3. If both fail → logs `[watcher] Failed to load K8s configuration` and returns (thread exits silently, server unaffected).
+
+**Clients** are instantiated **only after** successful config load:
+- `api_client_inst = client.ApiClient()`
+- `core_v1 = client.CoreV1Api(api_client_inst)`
+- `rbac_v1 = client.RbacAuthorizationV1Api(api_client_inst)`
+- `w = watch.Watch()`
+
+**Stream**: `w.stream(core_v1.list_pod_for_all_namespaces, timeout_seconds=0)` — infinite stream.
+
+**Per-event filters** (all three must pass, otherwise `continue`):
+1. `event_type == "ADDED"` — only react to new pods, ignore MODIFIED/DELETED.
+2. `namespace not in _SYSTEM_NAMESPACES` — skip `kube-system`, `kube-public`, `kube-node-lease`.
+3. `"kube-risk-analyzer" not in pod_name` — self-scan guard; prevents the watcher from scanning itself and creating an infinite loop.
+
+**Scan logic** (on each accepted event):
+- Fetch enabled workload and RBAC rules from DB.
+- `core_v1.read_namespaced_pod()` + `sanitize_for_serialization()` → pod dict.
+- Create `ScanHistory(target_name="Auto-Scan (Event): {namespace}/{pod_name}")`, commit, refresh.
+- `analyze_pod_workload(pod_dict, workload_rules)` → workload findings saved as `Finding` records.
+- Fetch namespace `RoleBindings` + all `ClusterRoleBindings`, call `get_sa_rbac_dangers(sa_name, ...)`.
+- If both workload and RBAC dangers non-empty → create CRITICAL CHAIN `Finding` (same assembly logic as manual scans).
+- `db.commit()`.
+- Each event is wrapped in inner `try/except` to log errors without crashing the stream.
+
+**`_SYSTEM_NAMESPACES`** constant: `{"kube-system", "kube-public", "kube-node-lease"}` — defined at module level.
+
+#### 7e. Scheduled Daily Backup (`app/main.py`)
+
+**`scheduled_backup_loop()`** — an `async` coroutine started via `asyncio.create_task()` in `lifespan`. Runs inside the FastAPI event loop; consumes zero extra RAM (no new process or thread).
+
+**Loop** (`while True`):
+1. `await asyncio.sleep(86400)` — wait 24 hours.
+2. Hot-copy `DB_PATH` → `BACKUPS_DIR/kube_risk_auto_backup_{YYYYMMDD_HHMMSS}.db` using `sqlite3.Connection.backup()`.
+3. **Rotation**: list all files in `BACKUPS_DIR` starting with `kube_risk_auto_backup_`, sort lexicographically (timestamp names → chronological order), delete all beyond the newest 10 via `os.remove()`. Manual server backups (prefix `kube_risk_backup_`) are not touched.
+4. Errors are caught and logged; the loop continues on next iteration.
+
+**Path constants** (module level in `main.py`, relative to CWD):
+- `DB_PATH = "data/kube_risk.db"`
+- `BACKUPS_DIR = "data/backups"` — created in `lifespan` via `os.makedirs(BACKUPS_DIR, exist_ok=True)`
+
+
 
 🔓 = unprotected (no auth required) | 🔐 = requires valid `kra_session` cookie
 
@@ -226,15 +280,34 @@ Applied to **all** endpoints except `GET /`, `GET /health`, `POST /admission/val
 | `POST` | `/db/backup/server` | 🔐 | `{"status": "success", "filename": str}` | Saves backup to `backups/` on server |
 | `POST` | `/admission/validate` | 🔓 | `AdmissionReview` JSON | Validating Admission Webhook — called by K8s API server |
 
-**Key helpers in `app/main.py`:**
+**Key helpers and background tasks in `app/main.py`:**
 - `_pod_display_status(status: dict) -> str` — reads `containerStatuses[*].state.waiting.reason` before falling back to `status.phase`
 - `_write_dump(items, prefix) -> str` — serializes K8s objects to `apiVersion/kind: List` YAML in `dumps/`
 - `_get_scan_or_404(scan_id, db)` — common scan lookup used by export endpoints
 - `get_current_user(request, db)` — auth dependency; raises 401 if `kra_session` cookie missing or invalid
+- `_k8s_watcher_thread()` — daemon thread body; streams K8s pod events, auto-scans new pods
+- `start_k8s_watcher()` — launches the daemon thread; called once in `lifespan`
+- `scheduled_backup_loop()` — async coroutine; 24h sleep → hot-backup → rotate to keep 10 files; started via `asyncio.create_task()` in `lifespan`
 
-**Key imports added to `app/main.py`:**
-- `uuid` — for `session_id` generation
-- `FastAPIResponse` aliased from `fastapi.responses.Response` — for cookie operations in auth endpoints
+**Lifespan startup sequence** (`lifespan(app)`):
+1. `sync_rules_to_db(db)` — seed rules if table empty
+2. Seed default admin user if `users` table empty
+3. Seed default BAS scripts if `bas_scripts` table empty
+4. `os.makedirs(BACKUPS_DIR, exist_ok=True)` — ensure `data/backups/` exists
+5. `start_k8s_watcher()` — start daemon thread
+6. `asyncio.create_task(scheduled_backup_loop())` — start daily backup coroutine
+
+**Key module-level constants in `app/main.py`:**
+- `DUMPS_DIR = "dumps"` — relative, created at module import via `os.makedirs`
+- `DB_PATH = "data/kube_risk.db"` — relative, matches `database.py`
+- `BACKUPS_DIR = "data/backups"` — relative, created in `lifespan`
+- `_SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease"}` — watcher filter
+
+**Key imports in `app/main.py`:**
+- `asyncio`, `threading` — event loop task and daemon thread
+- `uuid` — session ID generation
+- `from kubernetes import client, config, watch` — event watcher
+- `FastAPIResponse` aliased from `fastapi.responses.Response` — cookie ops
 - `from .auth_utils import hash_password, verify_password`
 
 #### 9. Rules Engine (`app/rules.py` + `rules.json`)
@@ -250,7 +323,8 @@ Applied to **all** endpoints except `GET /`, `GET /health`, `POST /admission/val
 
 #### 11. Database Configuration (`app/database.py`)
 
-- SQLite URL: `sqlite:///./kube_risk.db`
+- SQLite URL: `sqlite:///data/kube_risk.db` — **relative to CWD**. Resolves to `<project>/data/kube_risk.db` in WSL dev and `/workspace/data/kube_risk.db` inside the Docker container (where the `hostPath` volume is mounted).
+- `os.makedirs("data", exist_ok=True)` — called at module import time, before engine init. Guarantees the directory exists in both dev and prod without manual setup.
 - `check_same_thread=False` for FastAPI thread safety
 - WAL mode + foreign keys enabled via `@event.listens_for(Pool, "connect")`
 - `get_db()` — generator-based FastAPI dependency, yields `SessionLocal()`
@@ -258,7 +332,7 @@ Applied to **all** endpoints except `GET /`, `GET /health`, `POST /admission/val
 
 #### 11a. Alembic Migrations
 
-- Config: `alembic.ini` (`sqlalchemy.url = sqlite:///./kube_risk.db`)
+- Config: `alembic.ini` (`sqlalchemy.url = sqlite:///data/kube_risk.db`) — matches `database.py`
 - `alembic/env.py`: imports `app.database.Base` and `app.models` so `target_metadata = Base.metadata`
 - **Two migration files**:
   1. `2528ca9dd5f1` — initial schema: `risk_rules`, `scan_history`, `findings`, `bas_scripts`
@@ -267,12 +341,14 @@ Applied to **all** endpoints except `GET /`, `GET /health`, `POST /admission/val
 - When adding a new migration: `alembic revision --autogenerate -m "description"` then verify the upgrade body is non-empty before applying.
 
 #### 12. Tech Stack & Frontend Design
-- **Backend**: Python 3.10+, FastAPI, SQLAlchemy 2.0, Pydantic V2, K8s Python Client (`kubernetes`), PyYAML, Alembic. Additional stdlib: `csv`, `io`, `json`, `os`, `datetime`, `sqlite3`, `tempfile`, `uuid`, `hashlib`, `hmac`.
+- **Backend**: Python 3.10+, FastAPI, SQLAlchemy 2.0, Pydantic V2, K8s Python Client (`kubernetes`), PyYAML, Alembic. Additional stdlib: `asyncio`, `csv`, `hashlib`, `hmac`, `io`, `json`, `os`, `sqlite3`, `tempfile`, `threading`, `uuid`, `datetime`.
+- Additional kubernetes imports in `main.py`: `from kubernetes import client, config, watch` (used by the event watcher thread).
 - `app/static/` is served at `/static` via FastAPI `StaticFiles` mount. **All** frontend assets are vendored here — no CDN requests at runtime.
 - **Database**: SQLite with WAL mode. **Six tables**: `risk_rules`, `scan_history`, `findings`, `bas_scripts`, `users`, `sessions`.
 - **Frontend**: Zero-build SPA using Alpine.js + Tailwind CSS + DaisyUI. All vendored locally.
 - **Hash Routing**: Client-side navigation uses `window.location.hash`. Valid tab values: `dashboard`, `control`, `history`, `tests`, `rules`. Individual scan reports deep-linkable via `#history/{scan_id}`. The `hashchange` listener and `$watch('activeTab')` keep hash and state in sync.
 - **Auth gate in `init()`**: On startup, `init()` probes `GET /scans`. If the response is `401`, sets `isLoggedIn = false` and stops (shows login screen). If `200`, sets `isLoggedIn = true` and proceeds with full `fetchData()`.
+- **Auto-refresh polling**: At the end of `init()`, a `setInterval(() => { if (!document.hidden) this.fetchData(); }, 5000)` is registered. Polls every 5 seconds, but only when the browser tab is visible (`document.hidden` guard). This makes K8s Event Watcher auto-scan results appear on the dashboard without manual page reload.
 - **Design Language**: Serious, technical "Cyberpunk" aesthetic. DaisyUI `data-theme` for dark/light theme switching with `localStorage` key `kra-theme`. Sharp corners (`rounded-sm`), monospaced fonts for technical data, collapsible sidebar. All colors use DaisyUI semantic classes — **never** hardcode Tailwind dark-mode colors (e.g. `bg-gray-950`, `text-cyan-400`) in modals or cards. Use `bg-base-100`, `border-base-300`, `text-primary`, etc.
 - **Attack Path Graph theming**: `renderAttackGraph()` reads `data-theme` from `<html>` at call time and builds a `P` palette object for dark/light. Edge `font.background` is set to `P.canvasBg` so labels are readable over arrow lines. The `#attackGraphNetwork` container's `backgroundColor` is set inline to `P.canvasBg` before vis-network initialises.
 
@@ -386,9 +462,9 @@ Three-stage GitHub Actions pipeline triggered on `push` to `dev`. Each stage gat
 - Deletes old k3s image, imports new tar, `kubectl apply`, `kubectl rollout restart`, waits with `kubectl rollout status --timeout=120s`
 
 #### 14. Project Structure
-- `app/main.py`: FastAPI application, **30 endpoints** (28 original + `/auth/login` + `/auth/logout`). Key helpers: `_pod_display_status`, `_write_dump`, `_get_scan_or_404`, `get_current_user`.
+- `app/main.py`: FastAPI application, **30 endpoints** (28 original + `/auth/login` + `/auth/logout`). Key helpers: `_pod_display_status`, `_write_dump`, `_get_scan_or_404`, `get_current_user`. Background tasks: `_k8s_watcher_thread`, `scheduled_backup_loop`.
 - `app/auth_utils.py`: Password hashing/verification using stdlib `hashlib.pbkdf2_hmac` (sha256, 100k iterations, 32-byte salt). No third-party dependencies.
-- `app/database.py` & `app/models.py` & `app/schemas.py`: SQLAlchemy setup, ORM classes (**6 models**), Pydantic validation.
+- `app/database.py` & `app/models.py` & `app/schemas.py`: SQLAlchemy setup, ORM classes (**6 models**), Pydantic validation. `database.py` calls `os.makedirs("data", exist_ok=True)` at import time.
 - `app/scanners/`: `rbac.py` (3 functions), `workload.py` (2 functions), `network.py` (1 function), `remediator.py` (2 functions: `remediate_pod_spec`, `remediate_item`).
 - `app/bas.py`: Active simulation logic — 8 individual attack functions + 1 aggregated runner.
 - `app/k8s_client.py`: Live cluster data fetcher.
@@ -396,16 +472,18 @@ Three-stage GitHub Actions pipeline triggered on `push` to `dev`. Each stage gat
 - `rules.json`: 20 threat signatures across rbac/workload/network categories. Each rule has a `"remediation"` field.
 - `alembic/versions/2528ca9dd5f1_*.py`: Initial schema (4 tables).
 - `alembic/versions/c93e831e5815_add_auth_tables.py`: Auth tables (`users`, `sessions`).
+- `data/` (**not tracked in git**): Created automatically by `database.py` import. Contains:
+  - `kube_risk.db` — SQLite database (WAL mode). **In production (k3s)**: persisted via `hostPath` at `/var/lib/kube-risk-analyzer/data`.
+  - `backups/` — daily auto-backups (`kube_risk_auto_backup_*.db`, max 10) + manual server backups (`kube_risk_backup_*.db`). **In production**: same `hostPath` mount covers this subdirectory.
 - `dumps/`: Generated YAML dumps. `.gitkeep` keeps directory in git; `.gitignore` inside excludes `*.yaml`. **In production (k3s)**: persisted via `hostPath` at `/var/lib/kube-risk-analyzer/dumps` — survives pod restarts and rollouts.
-- `backups/`: Server-side DB backups. `.gitkeep` keeps directory in git; `.gitignore` inside excludes `*.db`.
-- `templates/index.html`: The entire frontend SPA (~1850 lines).
+- `templates/index.html`: The entire frontend SPA (~1870 lines). Auto-refreshes data every 5 s when tab is visible.
 - `app/static/css/daisyui.min.css`: DaisyUI 4.12.10 (vendored).
 - `app/static/js/tailwindcss.js`: Tailwind CSS (vendored).
 - `app/static/js/alpine.min.js`: Alpine.js 3.14.0 (vendored).
 - `app/static/js/chart.js`: Chart.js 4.4.3 (vendored).
 - `app/static/js/vis-network.min.js`: vis-network 9.1.9 (vendored).
-- `Dockerfile`: Base `python:3.10-slim`, WORKDIR `/workspace`. Copies `app/`, `templates/`, `alembic/`, `alembic.ini`, `rules.json`. Creates empty `dumps/` and `backups/` dirs. Exposes `8000`. Run `alembic upgrade head` before first start on a fresh volume.
-- `k8s-deploy.yaml`: Kubernetes manifests for cluster deployment.
+- `Dockerfile`: Base `python:3.10-slim`, WORKDIR `/workspace`. Copies `app/`, `templates/`, `alembic/`, `alembic.ini`, `rules.json`. `RUN mkdir -p dumps data/backups`. Exposes `8000`. CMD: `alembic upgrade head && uvicorn ...`.
+- `k8s-deploy.yaml`: Kubernetes manifests. Two `hostPath` volumes: `db-data` → `/var/lib/kube-risk-analyzer/data` at `/workspace/data`; `dumps-data` → `/var/lib/kube-risk-analyzer/dumps` at `/workspace/dumps`. Both use `type: DirectoryOrCreate`.
 - `.github/workflows/deploy.yml`: Three-stage DevSecOps CI/CD pipeline (secret scan → build/transfer → deploy).
 
 **Instructions for the AI:**
