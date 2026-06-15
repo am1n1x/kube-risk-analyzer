@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Request, Body, Query, Response as FastAPIResponse
@@ -13,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import yaml
+from kubernetes import client, config, watch
 from . import models, schemas
 from .database import SessionLocal, get_db
 from .rules import sync_rules_to_db
@@ -73,11 +75,156 @@ def _write_dump(items: list, prefix: str) -> str:
     return filename
 
 
+_SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease"}
+
+
+def _k8s_watcher_thread():
+    db = SessionLocal()
+    try:
+        # Load kubeconfig: prefer local ~/.kube/config, fall back to in-cluster
+        try:
+            config.load_kube_config()
+            print("[watcher] Loaded local kubeconfig")
+        except (config.ConfigException, FileNotFoundError) as e:
+            print(f"[watcher] Local kubeconfig unavailable ({e}), trying in-cluster config...")
+            try:
+                config.load_incluster_config()
+                print("[watcher] Loaded in-cluster config")
+            except config.ConfigException as e2:
+                print(f"[watcher] Failed to load K8s configuration: {e2}")
+                return
+
+        # Clients instantiated only after config is loaded
+        api_client_inst = client.ApiClient()
+        core_v1 = client.CoreV1Api(api_client_inst)
+        rbac_v1 = client.RbacAuthorizationV1Api(api_client_inst)
+        w = watch.Watch()
+
+        print("[kube-risk-analyzer] K8s event watcher started")
+
+        for event in w.stream(core_v1.list_pod_for_all_namespaces, timeout_seconds=0):
+            try:
+                event_type = event["type"]
+                pod = event["object"]
+                pod_name = pod.metadata.name
+                namespace = pod.metadata.namespace
+
+                if event_type != "ADDED":
+                    continue
+                if namespace in _SYSTEM_NAMESPACES:
+                    continue
+                if "kube-risk-analyzer" in pod_name:
+                    continue
+
+                workload_rules = db.query(models.RiskRule).filter(
+                    models.RiskRule.category == "workload",
+                    models.RiskRule.is_enabled,
+                ).all()
+                rbac_rules = db.query(models.RiskRule).filter(
+                    models.RiskRule.category == "rbac",
+                    models.RiskRule.is_enabled,
+                ).all()
+
+                pod_raw = core_v1.read_namespaced_pod(pod_name, namespace)
+                pod_dict = api_client_inst.sanitize_for_serialization(pod_raw)
+
+                scan = models.ScanHistory(
+                    target_name=f"Auto-Scan (Event): {namespace}/{pod_name}"
+                )
+                db.add(scan)
+                db.commit()
+                db.refresh(scan)
+
+                workload_dangers = analyze_pod_workload(pod_dict, workload_rules)
+
+                spec = pod_dict.get("spec", {})
+                sa_name = spec.get("serviceAccountName", "default")
+                images = ", ".join(
+                    c.get("image", "Unknown")
+                    for c in spec.get("containers", [])
+                )
+
+                # Fetch namespace-scoped and cluster-scoped bindings/roles
+                ns_roles = {}
+                for r in rbac_v1.list_namespaced_role(namespace).items:
+                    r_dict = api_client_inst.sanitize_for_serialization(r)
+                    ns_roles[f"Role/{namespace}/{r_dict['metadata']['name']}"] = r_dict
+
+                cluster_roles = {}
+                for cr in rbac_v1.list_cluster_role().items:
+                    cr_dict = api_client_inst.sanitize_for_serialization(cr)
+                    cluster_roles[f"ClusterRole/{cr_dict['metadata']['name']}"] = cr_dict
+
+                all_bindings = []
+                for rb in rbac_v1.list_namespaced_role_binding(namespace).items:
+                    all_bindings.append(api_client_inst.sanitize_for_serialization(rb))
+                for crb in rbac_v1.list_cluster_role_binding().items:
+                    all_bindings.append(api_client_inst.sanitize_for_serialization(crb))
+
+                sa_rbac_dangers = get_sa_rbac_dangers(
+                    sa_name, namespace, all_bindings, ns_roles, cluster_roles, rbac_rules
+                )
+
+                for danger_desc, danger_sev, danger_rem in workload_dangers:
+                    db.add(models.Finding(
+                        scan_id=scan.id,
+                        subject=f"Pod: {pod_name}",
+                        role=images,
+                        risk_description=danger_desc,
+                        severity=danger_sev,
+                        remediation=danger_rem,
+                    ))
+
+                if workload_dangers and sa_rbac_dangers:
+                    workload_rem = next((r for _, _, r in workload_dangers if r), None)
+                    rbac_rem = next((r for _, _, r in sa_rbac_dangers if r), None)
+                    chain_rem = None
+                    if workload_rem or rbac_rem:
+                        parts = []
+                        if workload_rem:
+                            parts.append(f"### Workload Fix\n{workload_rem}")
+                        if rbac_rem:
+                            parts.append(f"### RBAC Fix\n{rbac_rem}")
+                        chain_rem = "\n\n".join(parts)
+                    db.add(models.Finding(
+                        scan_id=scan.id,
+                        subject=f"Pod: {pod_name}",
+                        role=f"SA:{sa_name} | images: {images}",
+                        risk_description=(
+                            f"CRITICAL CHAIN: Pod is vulnerable "
+                            f"({', '.join(d for d, _, __ in workload_dangers)}) "
+                            f"and its ServiceAccount '{sa_name}' has dangerous RBAC rights "
+                            f"({', '.join(d for d, _, __ in sa_rbac_dangers)})"
+                        ),
+                        severity="CRITICAL",
+                        remediation=chain_rem,
+                    ))
+
+                db.commit()
+                print(f"[watcher] Auto-scanned pod {namespace}/{pod_name}: "
+                      f"{len(workload_dangers)} workload, {len(sa_rbac_dangers)} rbac dangers")
+
+            except Exception as e:
+                print(f"[watcher] Error processing event: {e}")
+
+    except Exception as e:
+        print(f"[watcher] Fatal error, thread exiting: {e}")
+    finally:
+        db.close()
+
+
+def start_k8s_watcher():
+    t = threading.Thread(target=_k8s_watcher_thread, daemon=True, name="k8s-event-watcher")
+    t.start()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         sync_rules_to_db(db)
+        # Start K8s event watcher in background daemon thread
+        start_k8s_watcher()
         # Seed default admin user if table is empty
         if db.query(models.User).count() == 0:
             admin = models.User(

@@ -75,3 +75,4 @@ identifier.sqlite
 req.cnf
 admission-webhook.yaml
 /kube-risk-analyzer.tar
+/kube-risk-playground.yaml

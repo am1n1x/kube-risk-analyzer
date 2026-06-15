@@ -1837,6 +1837,9 @@
                     if (initScanId) await this.fetchScanDetails(initScanId);
                     this.$watch('podViewAllScans', val => localStorage.setItem('kra-pod-all-scans', val));
                     if (this.activeTab === 'dashboard') this.$nextTick(() => { this.renderSeverityChart(); });
+
+                    // Auto-refresh: poll every 5 s when the tab is visible
+                    setInterval(() => { if (!document.hidden) this.fetchData(); }, 5000);
                 },
 
                 // ── Data fetchers ──────────────────────────────────────────
