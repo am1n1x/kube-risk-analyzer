@@ -1,0 +1,116 @@
+name: DevSecOps CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1 — Security scanning & static analysis
+# Runs first; downstream jobs are gated on this passing.
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  security-and-lint:
+    name: "Stage 1 · Security & Lint"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # TruffleHog needs full history to diff commits
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # ── Secret scanning ──────────────────────────────────────────────────
+      - name: TruffleHog — secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          # Scan only the commits introduced by this push
+          base: ${{ github.event.before }}
+          head: ${{ github.sha }}
+          extra_args: --debug --only-verified
+
+      # ── Linter ──────────────────────────────────────────────────────────
+      - name: Ruff — lint
+        run: |
+          pip install --quiet ruff
+          ruff check app/
+
+      # ── SAST ────────────────────────────────────────────────────────────
+      - name: Bandit — SAST
+        run: |
+          pip install --quiet bandit
+          bandit -r app/ -ll
+
+      # ── SCA ─────────────────────────────────────────────────────────────
+      - name: pip-audit — dependency vulnerability scan
+        run: |
+          pip install --quiet pip-audit
+          pip-audit -r requirements.txt
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2 — Docker build & transfer to VPS
+# ─────────────────────────────────────────────────────────────────────────────
+  build-and-transfer:
+    name: "Stage 2 · Build & Transfer"
+    needs: security-and-lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t kube-risk-analyzer:latest .
+
+      - name: Save Docker image to tar
+        run: docker save -o kube-risk-analyzer.tar kube-risk-analyzer:latest
+
+      - name: SCP image and manifests to VPS
+        uses: appleboy/scp-action@master
+        with:
+          host:     ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key:      ${{ secrets.VPS_SSH_KEY }}
+          source:   "kube-risk-analyzer.tar,k8s-deploy.yaml"
+          target:   "/home/ubuntu/"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3 — Remote deploy via SSH
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-to-vps:
+    name: "Stage 3 · Deploy to VPS"
+    needs: build-and-transfer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host:     ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key:      ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            export KUBECONFIG=~/.kube/config
+
+            echo "→ Removing old image from containerd..."
+            sudo k3s ctr -n k8s.io images delete docker.io/library/kube-risk-analyzer:latest || true
+
+            echo "→ Importing new image..."
+            sudo k3s ctr -n k8s.io images import /home/ubuntu/kube-risk-analyzer.tar
+
+            echo "→ Applying Kubernetes manifests..."
+            kubectl apply -f /home/ubuntu/k8s-deploy.yaml
+
+            echo "→ Rolling restart of deployment..."
+            kubectl rollout restart deployment kube-risk-analyzer
+
+            echo "→ Waiting for rollout to complete..."
+            kubectl rollout status deployment kube-risk-analyzer --timeout=120s
