@@ -94,3 +94,10 @@ class BasScriptSchema(BasScriptBase):
 
 class BASSimulateRequest(BaseModel):
     script_id: Optional[int] = None
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str

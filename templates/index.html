@@ -13,7 +13,87 @@
 </head>
 <body class="bg-base-200 text-base-content min-h-screen">
 
-    <div class="drawer lg:drawer-open">
+    <!-- ═══════════════════════════════════════════════════════════
+         LOGIN SCREEN
+    ═══════════════════════════════════════════════════════════ -->
+    <div x-show="!isLoggedIn" x-cloak class="min-h-screen flex items-center justify-center bg-base-200 relative overflow-hidden">
+        <!-- Background grid decoration -->
+        <div class="absolute inset-0 opacity-5" style="background-image: linear-gradient(rgba(6,182,212,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.3) 1px, transparent 1px); background-size: 40px 40px;"></div>
+
+        <div class="relative z-10 w-full max-w-sm mx-4">
+            <!-- Logo / title -->
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 border-2 border-primary/60 bg-primary/10 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-bold font-mono text-base-content tracking-widest uppercase">Kube Risk Analyzer</h1>
+                <p class="text-xs font-mono text-base-content/40 uppercase tracking-widest mt-1">Security Operations Platform</p>
+            </div>
+
+            <!-- Login card -->
+            <div class="bg-base-100 border border-base-300 p-8">
+                <div class="text-xs font-mono uppercase tracking-widest text-primary/80 mb-6 border-b border-base-300 pb-3">
+                    // AUTHENTICATE
+                </div>
+
+                <div class="flex flex-col gap-4">
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-base-content/50 text-xs font-mono uppercase tracking-wider">Username</span>
+                        </label>
+                        <input
+                            type="text"
+                            x-model="authUsername"
+                            @keydown.enter="login()"
+                            autocomplete="username"
+                            class="input input-bordered rounded-none border-base-300 bg-base-200 text-base-content font-mono focus:border-primary focus:outline-none w-full"
+                            placeholder=""
+                        />
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text text-base-content/50 text-xs font-mono uppercase tracking-wider">Password</span>
+                        </label>
+                        <input
+                            type="password"
+                            x-model="authPassword"
+                            @keydown.enter="login()"
+                            autocomplete="current-password"
+                            class="input input-bordered rounded-none border-base-300 bg-base-200 text-base-content font-mono focus:border-primary focus:outline-none w-full"
+                            placeholder=""
+                        />
+                    </div>
+
+                    <!-- Error message -->
+                    <div x-show="loginError" x-cloak class="px-3 py-2 bg-error/10 border border-error/40 text-error text-xs font-mono" x-text="loginError"></div>
+
+                    <button
+                        @click="login()"
+                        :disabled="loginLoading"
+                        class="btn btn-primary rounded-none font-mono uppercase tracking-widest mt-2 w-full"
+                    >
+                        <span x-show="!loginLoading">[ LOGIN ]</span>
+                        <span x-show="loginLoading" class="flex items-center gap-2">
+                            <span class="loading loading-spinner loading-xs"></span>
+                            AUTHENTICATING...
+                        </span>
+                    </button>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-base-300 text-center">
+                    <p class="text-xs font-mono text-base-content/20 uppercase tracking-wider">Protected by mTLS + Session Auth</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         MAIN APP (shown only when authenticated)
+    ═══════════════════════════════════════════════════════════ -->
+    <div x-show="isLoggedIn" x-cloak class="drawer lg:drawer-open">
         <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
 
         <div class="drawer-content flex flex-col items-center justify-start p-6">
@@ -741,7 +821,7 @@
                 </div>
 
                 <!-- Tab 4: Detection Rules -->
-                <div x-show="activeTab === 'kb'" x-transition.opacity x-cloak>
+                <div x-show="activeTab === 'rules'" x-transition.opacity x-cloak>
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-lg font-bold text-base-content font-mono uppercase tracking-wider">Detection Rules</h2>
                         <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary font-mono" @click="openAddRule()">
@@ -861,7 +941,7 @@
                 </div>
 
                 <!-- Tab 5: Built-in Tests -->
-                <div x-show="activeTab === 'builtins'" x-transition.opacity x-cloak>
+                <div x-show="activeTab === 'tests'" x-transition.opacity x-cloak>
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-lg font-bold text-base-content font-mono uppercase tracking-wider">Built-in Tests</h2>
                         <button class="btn btn-outline btn-sm rounded-sm text-primary border-primary/50 hover:bg-primary/10 hover:border-primary font-mono" @click="openAddBuiltinScript()">
@@ -964,11 +1044,11 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                         <span x-show="sidebarExpanded">History & Reports</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a href="#builtins" :class="(activeTab === 'builtins' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                    <li class="px-3 mb-1"><a href="#tests" :class="(activeTab === 'tests' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                         <span x-show="sidebarExpanded">Built-in Tests</span>
                     </a></li>
-                    <li class="px-3 mb-1"><a href="#kb" :class="(activeTab === 'kb' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
+                    <li class="px-3 mb-1"><a href="#rules" :class="(activeTab === 'rules' ? 'bg-primary/15 text-base-content border-l-4 border-primary font-semibold' : '') + (sidebarExpanded ? ' justify-start' : ' justify-center')" class="flex items-center gap-3 px-3 py-2.5 text-sm font-mono uppercase tracking-wider border-l-4 border-transparent hover:bg-base-300/50 hover:text-base-content rounded-none transition-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                         <span x-show="sidebarExpanded">Detection Rules</span>
                     </a></li>
@@ -1004,9 +1084,20 @@
                         <span x-show="sidebarExpanded" class="text-xs font-mono uppercase tracking-wider" x-text="theme === 'dark' ? 'Light Mode' : 'Dark Mode'"></span>
                     </button>
                 </li>
+
+                <!-- Logout -->
+                <li class="border-t border-base-300 mt-auto">
+                    <button @click="logout()" :class="sidebarExpanded ? 'justify-start px-4 gap-2' : 'justify-center'" class="flex items-center w-full px-3 py-3 text-error/60 hover:text-error hover:bg-error/10 rounded-none cursor-pointer transition-colors duration-150">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                        </svg>
+                        <span x-show="sidebarExpanded" class="text-xs font-mono uppercase tracking-wider">Logout</span>
+                    </button>
+                </li>
             </ul>
         </div>
     </div>
+    </div><!-- end isLoggedIn wrapper -->
 
     <!-- ═══════════════════════════════════════════════════════════
          MODAL: Add / Edit Rule
@@ -1176,6 +1267,13 @@
                 liveScanLoading: false,
                 sidebarExpanded: true,
                 theme: localStorage.getItem('kra-theme') || 'dark',
+
+                // ── Auth ───────────────────────────────────────────────────
+                isLoggedIn: false,
+                authUsername: '',
+                authPassword: '',
+                loginLoading: false,
+                loginError: '',
 
                 // ── Data lists ─────────────────────────────────────────────
                 scans: [],
@@ -1656,15 +1754,58 @@
                     setTimeout(() => { this.backupNotif = ''; }, 4000);
                 },
 
+                // ── Auth actions ───────────────────────────────────────────
+                async login() {
+                    this.loginLoading = true;
+                    this.loginError = '';
+                    try {
+                        const res = await fetch('/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: this.authUsername, password: this.authPassword }),
+                        });
+                        if (!res.ok) {
+                            const data = await res.json().catch(() => ({}));
+                            this.loginError = data.detail || 'Invalid credentials';
+                            return;
+                        }
+                        this.authPassword = '';
+                        this.isLoggedIn = true;
+                        await this.init();
+                    } catch (e) {
+                        this.loginError = 'Connection error: ' + e.message;
+                    } finally {
+                        this.loginLoading = false;
+                    }
+                },
+
+                async logout() {
+                    await fetch('/auth/logout', { method: 'POST' });
+                    this.isLoggedIn = false;
+                    this.scans = [];
+                    this.rules = [];
+                    this.scripts = [];
+                    this.clusterPods = [];
+                    this.authPassword = '';
+                },
+
                 // ── Init ───────────────────────────────────────────────────
                 async init() {
-                    const VALID_TABS = ['dashboard', 'control', 'history', 'kb', 'builtins'];
+                    const VALID_TABS = ['dashboard', 'control', 'history', 'rules', 'tests'];
                     const parseHash = raw => {
                         const parts = raw.split('/');
                         const tab = VALID_TABS.includes(parts[0]) ? parts[0] : 'dashboard';
                         const scanId = (tab === 'history' && /^\d+$/.test(parts[1] || '')) ? +parts[1] : null;
                         return { tab, scanId };
                     };
+
+                    // Check if we have a valid session
+                    const probe = await fetch('/scans');
+                    if (probe.status === 401) {
+                        this.isLoggedIn = false;
+                        return;
+                    }
+                    this.isLoggedIn = true;
 
                     const { tab: initTab, scanId: initScanId } = parseHash(location.hash.replace('#', ''));
                     this.activeTab = initTab;

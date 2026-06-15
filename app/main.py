@@ -5,8 +5,9 @@ import json
 import os
 import sqlite3
 import tempfile
+import uuid
 from datetime import datetime
-from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Request, Body, Query
+from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Request, Body, Query, Response as FastAPIResponse
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -21,6 +22,7 @@ from .scanners.network import analyze_services
 from .scanners.remediator import remediate_item
 from .k8s_client import get_live_k8s_data
 from .bas import simulate_custom_script
+from .auth_utils import hash_password, verify_password
 
 templates = Jinja2Templates(directory="templates")
 
@@ -76,6 +78,15 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         sync_rules_to_db(db)
+        # Seed default admin user if table is empty
+        if db.query(models.User).count() == 0:
+            admin = models.User(
+                username="admin",
+                password_hash=hash_password("KubeRisk2026!"),
+            )
+            db.add(admin)
+            db.commit()
+            print("[kube-risk-analyzer] Default admin user created (username: admin)")
         # Seed default BAS scripts if table is empty
         if db.query(models.BasScript).count() == 0:
             defaults = [
@@ -132,6 +143,48 @@ app = FastAPI(title="Kube Risk Analyzer API", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
+# ── Auth dependency ───────────────────────────────────────────────────────────
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> models.User:
+    session_id = request.cookies.get("kra_session")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    session = db.query(models.Session).filter(models.Session.session_id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return session.user
+
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+
+@app.post("/auth/login")
+def login(body: schemas.LoginRequest, response: FastAPIResponse, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.username == body.username).first()
+    if not user or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    session_id = str(uuid.uuid4())
+    db.add(models.Session(session_id=session_id, user_id=user.id))
+    db.commit()
+    response.set_cookie(
+        key="kra_session",
+        value=session_id,
+        httponly=True,
+        samesite="lax",
+        secure=False,  # set True when TLS is terminated by the app itself
+    )
+    return {"status": "success", "username": user.username}
+
+
+@app.post("/auth/logout")
+def logout(request: Request, response: FastAPIResponse, db: Session = Depends(get_db)):
+    session_id = request.cookies.get("kra_session")
+    if session_id:
+        db.query(models.Session).filter(models.Session.session_id == session_id).delete()
+        db.commit()
+    response.delete_cookie(key="kra_session")
+    return {"status": "logged out"}
+
+
 # ── Utility ───────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -146,7 +199,7 @@ def health_check():
 # ── Database backup ───────────────────────────────────────────────────────────
 
 @app.get("/db/backup/download")
-def backup_download(background_tasks: BackgroundTasks):
+def backup_download(background_tasks: BackgroundTasks, _: models.User = Depends(get_current_user)):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
     tmp_path = tmp.name
     tmp.close()
@@ -168,7 +221,7 @@ def backup_download(background_tasks: BackgroundTasks):
 
 
 @app.post("/db/backup/server")
-def backup_server():
+def backup_server(_: models.User = Depends(get_current_user)):
     filename = f"kube_risk_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
     dest_path = os.path.join(BACKUPS_DIR, filename)
 
@@ -184,7 +237,7 @@ def backup_server():
 # ── Cluster info ──────────────────────────────────────────────────────────────
 
 @app.get("/cluster/pods")
-def get_cluster_pod_list():
+def get_cluster_pod_list(_: models.User = Depends(get_current_user)):
     try:
         k8s_data = get_live_k8s_data()
         pods = []
@@ -205,7 +258,7 @@ def get_cluster_pod_list():
 
 
 @app.get("/dumps")
-def list_dumps():
+def list_dumps(_: models.User = Depends(get_current_user)):
     files = sorted(
         [f for f in os.listdir(DUMPS_DIR) if f.endswith((".yaml", ".yml"))],
         reverse=True,
@@ -219,6 +272,7 @@ def list_dumps():
 def dump_live(
     namespace: str | None = Query(default=None),
     pod_name: str | None = Query(default=None),
+    _: models.User = Depends(get_current_user),
 ):
     try:
         k8s_data = get_live_k8s_data()
@@ -276,11 +330,11 @@ def dump_live(
 # ── Rules CRUD ────────────────────────────────────────────────────────────────
 
 @app.get("/rules", response_model=list[schemas.RiskRuleSchema])
-def get_rules(db: Session = Depends(get_db)):
+def get_rules(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     return db.query(models.RiskRule).all()
 
 @app.post("/rules", response_model=schemas.RiskRuleSchema, status_code=201)
-def create_rule(rule: schemas.RiskRuleCreate, db: Session = Depends(get_db)):
+def create_rule(rule: schemas.RiskRuleCreate, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     db_rule = models.RiskRule(**rule.model_dump())
     db.add(db_rule)
     db.commit()
@@ -288,7 +342,7 @@ def create_rule(rule: schemas.RiskRuleCreate, db: Session = Depends(get_db)):
     return db_rule
 
 @app.put("/rules/{rule_id}", response_model=schemas.RiskRuleSchema)
-def update_rule(rule_id: int, rule: schemas.RiskRuleUpdate, db: Session = Depends(get_db)):
+def update_rule(rule_id: int, rule: schemas.RiskRuleUpdate, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     db_rule = db.query(models.RiskRule).filter(models.RiskRule.id == rule_id).first()
     if not db_rule:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -299,7 +353,7 @@ def update_rule(rule_id: int, rule: schemas.RiskRuleUpdate, db: Session = Depend
     return db_rule
 
 @app.delete("/rules/{rule_id}", status_code=204)
-def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+def delete_rule(rule_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     db_rule = db.query(models.RiskRule).filter(models.RiskRule.id == rule_id).first()
     if not db_rule:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -310,16 +364,16 @@ def delete_rule(rule_id: int, db: Session = Depends(get_db)):
 # ── Scans ─────────────────────────────────────────────────────────────────────
 
 @app.get("/scans", response_model=list[schemas.ScanHistorySchema])
-def get_scans(db: Session = Depends(get_db)):
+def get_scans(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     return db.query(models.ScanHistory).order_by(models.ScanHistory.id.desc()).all()
 
 @app.get("/scans/{scan_id}", response_model=list[schemas.FindingSchema])
-def get_scan(scan_id: int, db: Session = Depends(get_db)):
+def get_scan(scan_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     findings = db.query(models.Finding).filter(models.Finding.scan_id == scan_id).all()
     return sorted(findings, key=_severity_key)
 
 @app.delete("/scans/{scan_id}", status_code=204)
-def delete_scan(scan_id: int, db: Session = Depends(get_db)):
+def delete_scan(scan_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     scan = db.query(models.ScanHistory).filter(models.ScanHistory.id == scan_id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -337,7 +391,7 @@ def _get_scan_or_404(scan_id: int, db: Session) -> models.ScanHistory:
 
 
 @app.get("/scans/{scan_id}/export/json")
-def export_scan_json(scan_id: int, db: Session = Depends(get_db)):
+def export_scan_json(scan_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     scan = _get_scan_or_404(scan_id, db)
     data = [
         {"severity": f.severity, "subject": f.subject, "role": f.role, "risk_description": f.risk_description}
@@ -351,7 +405,7 @@ def export_scan_json(scan_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/scans/{scan_id}/export/csv")
-def export_scan_csv(scan_id: int, db: Session = Depends(get_db)):
+def export_scan_csv(scan_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     scan = _get_scan_or_404(scan_id, db)
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -366,7 +420,7 @@ def export_scan_csv(scan_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/scans/{scan_id}/export/markdown")
-def export_scan_markdown(scan_id: int, db: Session = Depends(get_db)):
+def export_scan_markdown(scan_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     scan = _get_scan_or_404(scan_id, db)
     findings = sorted(scan.findings, key=_severity_key)
 
@@ -397,7 +451,7 @@ def export_scan_markdown(scan_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/scans/{scan_id}/export/sarif")
-def export_scan_sarif(scan_id: int, db: Session = Depends(get_db)):
+def export_scan_sarif(scan_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     scan = _get_scan_or_404(scan_id, db)
     findings = sorted(scan.findings, key=_severity_key)
 
@@ -456,7 +510,7 @@ def export_scan_sarif(scan_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/scans/{scan_id}/export/remediated-yaml")
-def export_remediated_yaml(scan_id: int, db: Session = Depends(get_db)):
+def export_remediated_yaml(scan_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     scan = _get_scan_or_404(scan_id, db)
 
     target = scan.target_name
@@ -503,6 +557,7 @@ def export_remediated_yaml(scan_id: int, db: Session = Depends(get_db)):
 def scan_offline(
     filename: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
 ):
     if filename:
         safe = os.path.basename(filename)
@@ -652,6 +707,7 @@ def scan_live(
     namespace: str | None = Query(default=None),
     pod_name: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
 ):
     if pod_name and namespace:
         target_name = f"Live Pod: {namespace}/{pod_name}"
@@ -828,11 +884,11 @@ def scan_live(
 # ── BAS Scripts CRUD ──────────────────────────────────────────────────────────
 
 @app.get("/scripts", response_model=list[schemas.BasScriptSchema])
-def get_scripts(db: Session = Depends(get_db)):
+def get_scripts(db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     return db.query(models.BasScript).order_by(models.BasScript.id).all()
 
 @app.post("/scripts", response_model=schemas.BasScriptSchema, status_code=201)
-def create_script(script: schemas.BasScriptCreate, db: Session = Depends(get_db)):
+def create_script(script: schemas.BasScriptCreate, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     db_script = models.BasScript(**script.model_dump())
     db.add(db_script)
     db.commit()
@@ -840,7 +896,7 @@ def create_script(script: schemas.BasScriptCreate, db: Session = Depends(get_db)
     return db_script
 
 @app.put("/scripts/{script_id}", response_model=schemas.BasScriptSchema)
-def update_script(script_id: int, script: schemas.BasScriptUpdate, db: Session = Depends(get_db)):
+def update_script(script_id: int, script: schemas.BasScriptUpdate, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     db_script = db.query(models.BasScript).filter(models.BasScript.id == script_id).first()
     if not db_script:
         raise HTTPException(status_code=404, detail="Script not found")
@@ -851,7 +907,7 @@ def update_script(script_id: int, script: schemas.BasScriptUpdate, db: Session =
     return db_script
 
 @app.delete("/scripts/{script_id}", status_code=204)
-def delete_script(script_id: int, db: Session = Depends(get_db)):
+def delete_script(script_id: int, db: Session = Depends(get_db), _: models.User = Depends(get_current_user)):
     db_script = db.query(models.BasScript).filter(models.BasScript.id == script_id).first()
     if not db_script:
         raise HTTPException(status_code=404, detail="Script not found")
@@ -867,6 +923,7 @@ def simulate_bas(
     pod_name: str,
     req: schemas.BASSimulateRequest = Body(default=schemas.BASSimulateRequest()),
     db: Session = Depends(get_db),
+    _: models.User = Depends(get_current_user),
 ):
     # Resolve script from DB
     script = None

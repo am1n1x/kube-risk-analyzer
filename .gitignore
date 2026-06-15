@@ -71,4 +71,5 @@ identifier.sqlite
 *.crt
 *.csr
 *.srl
-*.yaml
+admission-webhook.yaml
+/kube-risk-analyzer.tar
