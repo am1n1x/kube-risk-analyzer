@@ -44,10 +44,16 @@ spec:
           volumeMounts:
             - name: db-data
               mountPath: /workspace/data
+            - name: dumps-data
+              mountPath: /workspace/dumps
       volumes:
         - name: db-data
           hostPath:
             path: /var/lib/kube-risk-analyzer/data
+            type: DirectoryOrCreate
+        - name: dumps-data
+          hostPath:
+            path: /var/lib/kube-risk-analyzer/dumps
             type: DirectoryOrCreate
 ---
 apiVersion: v1

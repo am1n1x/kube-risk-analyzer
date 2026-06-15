@@ -396,7 +396,7 @@ Three-stage GitHub Actions pipeline triggered on `push` to `dev`. Each stage gat
 - `rules.json`: 20 threat signatures across rbac/workload/network categories. Each rule has a `"remediation"` field.
 - `alembic/versions/2528ca9dd5f1_*.py`: Initial schema (4 tables).
 - `alembic/versions/c93e831e5815_add_auth_tables.py`: Auth tables (`users`, `sessions`).
-- `dumps/`: Generated YAML dumps. `.gitkeep` keeps directory in git; `.gitignore` inside excludes `*.yaml`.
+- `dumps/`: Generated YAML dumps. `.gitkeep` keeps directory in git; `.gitignore` inside excludes `*.yaml`. **In production (k3s)**: persisted via `hostPath` at `/var/lib/kube-risk-analyzer/dumps` — survives pod restarts and rollouts.
 - `backups/`: Server-side DB backups. `.gitkeep` keeps directory in git; `.gitignore` inside excludes `*.db`.
 - `templates/index.html`: The entire frontend SPA (~1850 lines).
 - `app/static/css/daisyui.min.css`: DaisyUI 4.12.10 (vendored).
