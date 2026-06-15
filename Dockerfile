@@ -10,7 +10,7 @@ COPY templates/ ./templates/
 COPY alembic/ ./alembic/
 COPY alembic.ini rules.json ./
 
-RUN mkdir -p dumps backups
+RUN mkdir -p dumps data/backups
 
 EXPOSE 8000
 

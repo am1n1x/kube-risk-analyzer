@@ -41,6 +41,14 @@ spec:
           imagePullPolicy: IfNotPresent     # Инструктирует K8s брать образ из кэша, а не качать из интернета
           ports:
             - containerPort: 8000
+          volumeMounts:
+            - name: db-data
+              mountPath: /workspace/data
+      volumes:
+        - name: db-data
+          hostPath:
+            path: /var/lib/kube-risk-analyzer/data
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

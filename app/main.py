@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import csv
 import io
 import json
@@ -31,10 +32,8 @@ templates = Jinja2Templates(directory="templates")
 DUMPS_DIR = "dumps"
 os.makedirs(DUMPS_DIR, exist_ok=True)
 
-BACKUPS_DIR = "backups"
-os.makedirs(BACKUPS_DIR, exist_ok=True)
-
-DB_PATH = "kube_risk.db"
+BACKUPS_DIR = "/workspace/data/backups"
+DB_PATH = "/workspace/data/kube_risk.db"
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
@@ -73,6 +72,33 @@ def _write_dump(items: list, prefix: str) -> str:
             f, allow_unicode=True, default_flow_style=False,
         )
     return filename
+
+
+async def scheduled_backup_loop():
+    """Daily hot-backup of the SQLite DB — runs inside the event loop, zero extra RAM."""
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            filename = f"kube_risk_auto_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+            dest_path = os.path.join(BACKUPS_DIR, filename)
+            src = sqlite3.connect(DB_PATH)
+            dst = sqlite3.connect(dest_path)
+            src.backup(dst)
+            dst.close()
+            src.close()
+            print(f"[backup] Daily auto-backup saved: {filename}")
+
+            # Rotation: keep at most 10 automated backups, delete oldest first
+            auto_backups = sorted(
+                f for f in os.listdir(BACKUPS_DIR)
+                if f.startswith("kube_risk_auto_backup_")
+            )
+            for oldest in auto_backups[:-10]:
+                os.remove(os.path.join(BACKUPS_DIR, oldest))
+                print(f"[BACKUP ROTATION] Deleted oldest backup file: {oldest}")
+
+        except Exception as e:
+            print(f"[backup] Auto-backup failed: {e}")
 
 
 _SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease"}
@@ -223,8 +249,12 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         sync_rules_to_db(db)
+        # Ensure persistent data directories exist (no-op on fresh hostPath mount)
+        os.makedirs(BACKUPS_DIR, exist_ok=True)
         # Start K8s event watcher in background daemon thread
         start_k8s_watcher()
+        # Schedule daily DB auto-backup inside the async event loop
+        asyncio.create_task(scheduled_backup_loop())
         # Seed default admin user if table is empty
         if db.query(models.User).count() == 0:
             admin = models.User(

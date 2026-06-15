@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import Pool
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./kube_risk.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:////workspace/data/kube_risk.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
