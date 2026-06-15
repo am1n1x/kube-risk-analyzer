@@ -1665,7 +1665,7 @@
 
                 scanModule(targetName) {
                     if (targetName.includes('BAS Simulation')) return 'BAS';
-                    if (targetName.startsWith('Live')) return 'LIVE';
+                    if (targetName.startsWith('Live') || targetName.includes('Auto-Scan')) return 'LIVE';
                     return 'CSPM';
                 },
 
