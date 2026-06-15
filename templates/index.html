@@ -1176,16 +1176,16 @@
          MODAL: Attack Path Graph
     ═══════════════════════════════════════════════════════════ -->
     <div class="modal" :class="{'modal-open': graphModalOpen}" x-cloak>
-        <div class="modal-box rounded-sm bg-gray-950 border border-cyan-800/50 max-w-4xl w-full shadow-[0_0_30px_rgba(6,182,212,0.15)]">
+        <div class="modal-box rounded-sm bg-base-100 border border-base-300 max-w-4xl w-full">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="font-mono font-bold text-cyan-400 uppercase tracking-wider text-base">⬡ Attack Path Graph</h3>
+                <h3 class="font-mono font-bold text-primary uppercase tracking-wider text-base">⬡ Attack Path Graph</h3>
                 <button @click="graphModalOpen = false; if (graphNetworkInstance) { graphNetworkInstance.destroy(); graphNetworkInstance = null; }"
                     class="btn btn-ghost btn-xs rounded-sm font-mono text-base-content/50">✕ Close</button>
             </div>
-            <div id="attackGraphNetwork" class="w-full h-[400px] border border-cyan-800/50 bg-gray-950 rounded-sm"></div>
+            <div id="attackGraphNetwork" class="w-full h-[400px] border border-base-300 bg-base-200 rounded-sm"></div>
             <div class="modal-action mt-4">
                 <button @click="graphModalOpen = false; if (graphNetworkInstance) { graphNetworkInstance.destroy(); graphNetworkInstance = null; }"
-                    class="btn btn-outline btn-sm rounded-sm font-mono uppercase border-cyan-800/50 text-cyan-600 hover:border-cyan-500 hover:text-cyan-400">Close</button>
+                    class="btn btn-outline btn-sm rounded-sm font-mono uppercase border-base-300 text-base-content/60 hover:border-primary hover:text-primary">Close</button>
             </div>
         </div>
         <div class="modal-backdrop bg-black/70" @click="graphModalOpen = false; if (graphNetworkInstance) { graphNetworkInstance.destroy(); graphNetworkInstance = null; }"></div>
@@ -2059,40 +2059,62 @@
                     const subj = finding.subject || '';
                     const role = finding.role || '';
 
+                    // ── Theme-aware palette ───────────────────────────────────
+                    const currentTheme = document.documentElement.getAttribute('data-theme')
+                        || localStorage.getItem('kra-theme') || 'dark';
+                    const isDark = ['dark', 'dim', 'business', 'night', 'black', 'dracula', 'halloween'].includes(currentTheme);
+
+                    const P = {
+                        canvasBg:    isDark ? '#0f172a' : '#f8fafc',
+                        nodeBg:      isDark ? '#1e293b' : '#f1f5f9',
+                        nodeBorder:  isDark ? '#06b6d4' : '#0891b2',
+                        nodeText:    isDark ? '#f8fafc' : '#0f172a',
+                        highlightBg: isDark ? '#1f2937' : '#e2e8f0',
+                        edgeColor:   isDark ? '#f43f5e' : '#e11d48',
+                        edgeLbl:     isDark ? '#f8fafc' : '#0f172a',
+                        // per-node accent backgrounds
+                        neutral:     isDark ? '#1e293b' : '#e2e8f0',
+                        redBg:       isDark ? '#1c1917' : '#fee2e2',
+                        deepRedBg:   isDark ? '#1a0a0a' : '#fecaca',
+                        purpleBg:    isDark ? '#0d0d1a' : '#ede9fe',
+                        crimsonBg:   isDark ? '#1a0000' : '#ffe4e6',
+                        cyanBg:      isDark ? '#0a1a1f' : '#ecfeff',
+                        stoneBg:     isDark ? '#1c1917' : '#f5f5f4',
+                        orangeBg:    isDark ? '#1a0a00' : '#ffedd5',
+                    };
+
                     const NODE_BASE = {
                         shape: 'box',
                         margin: 12,
                         borderWidth: 1.5,
-                        font: { color: '#e5e7eb', face: 'monospace', size: 11 },
+                        font: { color: P.nodeText, face: 'monospace', size: 11 },
                         shapeProperties: { borderRadius: 2 },
                     };
-                    const col = (bg, border) => ({ color: { background: bg, border: border, highlight: { background: '#1f2937', border: border } } });
+                    const col = (bg, border) => ({
+                        color: { background: bg, border: border, highlight: { background: P.highlightBg, border: border } },
+                    });
 
                     let nodes = [], edges = [];
 
                     if (desc.includes('CRITICAL CHAIN')) {
-                        // Extract pod name from subject like "Pod: nginx-vuln"
                         const podMatch = subj.match(/Pod:\s*(.+)/);
                         const podName = podMatch ? podMatch[1].trim() : 'Unknown Pod';
 
-                        // Extract SA name from role like "SA:danger-sa | images: ..."
                         const saMatch = role.match(/SA:([^\s|]+)/);
                         const saName = saMatch ? saMatch[1].trim() : 'Unknown SA';
 
-                        // Extract workload vulns from "Pod is vulnerable (vuln1, vuln2)"
                         const vulnMatch = desc.match(/vulnerable \(([^)]+)\)/);
                         const vulns = vulnMatch ? vulnMatch[1] : 'Misconfiguration';
 
-                        // Extract RBAC danger from "has dangerous RBAC rights (...)
                         const rbacMatch = desc.match(/RBAC rights \(([^)]+)\)/);
                         const rbacDanger = rbacMatch ? rbacMatch[1] : 'Cluster Admin';
 
                         nodes = [
-                            { id: 1, label: '[Internet / Attacker]', ...NODE_BASE, ...col('#1f2937', '#6b7280') },
-                            { id: 2, label: `[Pod: ${podName}]`, ...NODE_BASE, ...col('#1c1917', '#f87171') },
-                            { id: 3, label: `[Vuln: ${vulns.slice(0, 60)}]`, ...NODE_BASE, ...col('#1a0a0a', '#ef4444') },
-                            { id: 4, label: `[SA Token: ${saName}]`, ...NODE_BASE, ...col('#0d0d1a', '#a78bfa') },
-                            { id: 5, label: `[Cluster Compromise\n${rbacDanger.slice(0, 40)}]`, ...NODE_BASE, borderWidth: 3, ...col('#1a0000', '#f43f5e') },
+                            { id: 1, label: '[Internet / Attacker]', ...NODE_BASE, ...col(P.neutral,   '#6b7280') },
+                            { id: 2, label: `[Pod: ${podName}]`,      ...NODE_BASE, ...col(P.redBg,    '#f87171') },
+                            { id: 3, label: `[Vuln: ${vulns.slice(0, 60)}]`, ...NODE_BASE, ...col(P.deepRedBg, '#ef4444') },
+                            { id: 4, label: `[SA Token: ${saName}]`,  ...NODE_BASE, ...col(P.purpleBg, '#a78bfa') },
+                            { id: 5, label: `[Cluster Compromise\n${rbacDanger.slice(0, 40)}]`, ...NODE_BASE, borderWidth: 3, ...col(P.crimsonBg, '#f43f5e') },
                         ];
                         edges = [
                             { from: 1, to: 2, label: 'Network Access' },
@@ -2101,23 +2123,22 @@
                             { from: 4, to: 5, label: 'Escalates privileges' },
                         ];
                     } else {
-                        // Network exposure: NodePort / LoadBalancer
                         const svcMatch = subj.match(/Service:\s*(.+)/);
                         const svcName = svcMatch ? svcMatch[1].trim() : subj;
                         const svcType = role.replace('Type: ', '');
                         const isDb = desc.toLowerCase().includes('database') || desc.includes('база данных') || desc.includes('5432') || desc.includes('3306') || desc.includes('27017') || desc.includes('6379');
 
                         nodes = [
-                            { id: 1, label: '[Internet]', ...NODE_BASE, ...col('#1f2937', '#6b7280') },
-                            { id: 2, label: `[Service: ${svcName}\nType: ${svcType}]`, ...NODE_BASE, ...col('#0a1a1f', '#06b6d4') },
-                            { id: 3, label: '[Target Pod]', ...NODE_BASE, ...col('#1c1917', '#78716c') },
+                            { id: 1, label: '[Internet]',                          ...NODE_BASE, ...col(P.neutral,  '#6b7280') },
+                            { id: 2, label: `[Service: ${svcName}\nType: ${svcType}]`, ...NODE_BASE, ...col(P.cyanBg,   '#06b6d4') },
+                            { id: 3, label: '[Target Pod]',                        ...NODE_BASE, ...col(P.stoneBg,  '#78716c') },
                         ];
                         edges = [
                             { from: 1, to: 2, label: 'Public access' },
                             { from: 2, to: 3, label: 'Routes to' },
                         ];
                         if (isDb) {
-                            nodes.push({ id: 4, label: '[Exposed DB Port]', ...NODE_BASE, borderWidth: 2.5, ...col('#1a0a00', '#f97316') });
+                            nodes.push({ id: 4, label: '[Exposed DB Port]', ...NODE_BASE, borderWidth: 2.5, ...col(P.orangeBg, '#f97316') });
                             edges.push({ from: 2, to: 4, label: 'Exposes port' });
                         }
                     }
@@ -2127,14 +2148,19 @@
                             shape: 'box',
                             margin: 12,
                             borderWidth: 1.5,
-                            color: { background: '#111827', border: '#06b6d4', highlight: { background: '#1f2937', border: '#22d3ee' } },
-                            font: { color: '#e5e7eb', face: 'monospace', size: 11 },
+                            color: {
+                                background: P.nodeBg,
+                                border: P.nodeBorder,
+                                highlight: { background: P.highlightBg, border: P.nodeBorder },
+                            },
+                            font: { color: P.nodeText, face: 'monospace', size: 11 },
                             shapeProperties: { borderRadius: 2 },
                         },
                         edges: {
                             arrows: 'to',
-                            color: { color: '#f43f5e', highlight: '#f43f5e', hover: '#f43f5e' },
-                            font: { color: '#9ca3af', face: 'monospace', size: 10, align: 'middle' },
+                            color: { color: P.edgeColor, highlight: P.edgeColor, hover: P.edgeColor },
+                            // background matches canvas so the label masks the arrow line cleanly
+                            font: { color: P.edgeLbl, background: P.canvasBg, size: 10, face: 'monospace', align: 'middle' },
                             smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.5 },
                         },
                         layout: { hierarchical: false },
@@ -2149,6 +2175,7 @@
                     this.$nextTick(() => {
                         const container = document.getElementById('attackGraphNetwork');
                         if (!container) return;
+                        container.style.backgroundColor = P.canvasBg;
                         this.graphNetworkInstance = new vis.Network(
                             container,
                             { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
