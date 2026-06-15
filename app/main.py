@@ -32,8 +32,8 @@ templates = Jinja2Templates(directory="templates")
 DUMPS_DIR = "dumps"
 os.makedirs(DUMPS_DIR, exist_ok=True)
 
-BACKUPS_DIR = "/workspace/data/backups"
-DB_PATH = "/workspace/data/kube_risk.db"
+BACKUPS_DIR = "data/backups"
+DB_PATH = "data/kube_risk.db"
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 
