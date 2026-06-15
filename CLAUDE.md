@@ -409,7 +409,7 @@ Computed getters:
 - `basDefenseRate`, `builtinScripts`, `filteredBuiltins`
 
 Helper methods:
-- `scanModule(targetName)` → `'BAS'|'LIVE'|'CSPM'`
+- `scanModule(targetName)` → `'BAS'|'LIVE'|'CSPM'` — `'BAS'` if contains `"BAS Simulation"`; `'LIVE'` if starts with `"Live"` **or** contains `"Auto-Scan"` (K8s Event Watcher); `'CSPM'` otherwise (offline YAML scans, admission blocks)
 - `scanMaxSev(findings)`, `scanBadgeCls(findings)`, `getSeverityPct(scan, severity)`, `sevCount(sev)`
 
 Action methods:
