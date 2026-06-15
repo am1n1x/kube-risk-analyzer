@@ -1,5 +1,4 @@
 import json
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 from .models import RiskRule
 

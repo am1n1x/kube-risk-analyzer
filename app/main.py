@@ -615,15 +615,15 @@ def scan_offline(
 
     rbac_rules = db.query(models.RiskRule).filter(
         models.RiskRule.category == 'rbac',
-        models.RiskRule.is_enabled == True,
+        models.RiskRule.is_enabled,
     ).all()
     workload_rules = db.query(models.RiskRule).filter(
         models.RiskRule.category == 'workload',
-        models.RiskRule.is_enabled == True,
+        models.RiskRule.is_enabled,
     ).all()
     network_rules = db.query(models.RiskRule).filter(
         models.RiskRule.category == 'network',
-        models.RiskRule.is_enabled == True,
+        models.RiskRule.is_enabled,
     ).all()
 
     findings = analyze_rbac_bindings(bindings, roles, cluster_roles, rbac_rules)
@@ -791,15 +791,15 @@ def scan_live(
 
     rbac_rules = db.query(models.RiskRule).filter(
         models.RiskRule.category == 'rbac',
-        models.RiskRule.is_enabled == True,
+        models.RiskRule.is_enabled,
     ).all()
     workload_rules = db.query(models.RiskRule).filter(
         models.RiskRule.category == 'workload',
-        models.RiskRule.is_enabled == True,
+        models.RiskRule.is_enabled,
     ).all()
     network_rules = db.query(models.RiskRule).filter(
         models.RiskRule.category == 'network',
-        models.RiskRule.is_enabled == True,
+        models.RiskRule.is_enabled,
     ).all()
 
     findings_count = 0
@@ -933,13 +933,13 @@ def simulate_bas(
             raise HTTPException(status_code=404, detail="Script not found")
     else:
         script = db.query(models.BasScript).filter(
-            models.BasScript.is_default == True,
+            models.BasScript.is_default,
             models.BasScript.name == "Token Theft",
         ).first()
         if not script:
             # Fallback: any default script
             script = db.query(models.BasScript).filter(
-                models.BasScript.is_default == True,
+                models.BasScript.is_default,
             ).first()
         if not script:
             raise HTTPException(status_code=404, detail="No default BAS script found in database. Seed the database first.")
@@ -1004,7 +1004,7 @@ async def admission_validate(request: Request, db: Session = Depends(get_db)):
 
     workload_rules = db.query(models.RiskRule).filter(
         models.RiskRule.category == "workload",
-        models.RiskRule.is_enabled == True,
+        models.RiskRule.is_enabled,
     ).all()
 
     workload_dangers = analyze_pod_workload(target_to_scan, workload_rules)
@@ -1034,7 +1034,7 @@ async def admission_validate(request: Request, db: Session = Depends(get_db)):
                 "allowed": False,
                 "status": {
                     "message": (
-                        f"Kube Risk Analyzer blocked this deployment: "
+                        "Kube Risk Analyzer blocked this deployment: "
                         + ", ".join(d for d, _, __ in workload_dangers)
                     ),
                 },
